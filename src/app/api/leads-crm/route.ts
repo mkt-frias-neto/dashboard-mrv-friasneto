@@ -43,12 +43,15 @@ function cleanEmail(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
-// Title Case: "JOÃO DA SILVA" or "joão" → "Joao da Silva"
+// Title Case: "JOÃO DA SILVA" or "ᴰᵃⁱᵃⁿᵉ" → "Daiane"
 function toTitleCase(name: string): string {
-  // Remove non-letter chars (superscripts, emojis, etc) keeping spaces, hyphens, apostrophes
-  const cleaned = name
-    .normalize("NFC")
+  // NFKD decomposes compatibility chars (superscripts → normal letters)
+  // then NFC recomposes accented chars
+  const normalized = name.normalize("NFKD").normalize("NFC");
+  // Keep only basic latin, accented latin, spaces, hyphens, apostrophes
+  const cleaned = normalized
     .replace(/[^a-zA-ZÀ-ÿ\s'-]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return name.trim();
   const lower = cleaned;
