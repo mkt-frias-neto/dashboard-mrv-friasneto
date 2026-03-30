@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// Cache for 4 hours — refreshed by GitHub Actions deploy at 7h, 11h, 13h, 17h
+export const revalidate = 14400;
 
 const SHEET_ID = "1OxCJuvQ4SXjteAAn3lS8JE4BAn12mg0X-DvX1o7hUi8";
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;

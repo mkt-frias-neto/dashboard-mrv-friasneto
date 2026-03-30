@@ -6,6 +6,10 @@ on:
     - cron: "0 10 * * *"
     # 11:00 AM BRT = 14:00 UTC
     - cron: "0 14 * * *"
+    # 13:00 PM BRT = 16:00 UTC
+    - cron: "0 16 * * *"
+    # 17:00 PM BRT = 20:00 UTC
+    - cron: "0 20 * * *"
   workflow_dispatch: # permite rodar manualmente
 
 jobs:
