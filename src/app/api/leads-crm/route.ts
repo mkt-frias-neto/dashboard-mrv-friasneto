@@ -178,32 +178,44 @@ function toCrmStatus(d: any): CrmStatus {
   };
 }
 
-async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
-  const item = await ksiFetch({
+// Two-pass query: first ABERTA only, then ALL if no open found
+async function queryKsi(
+  searchParam: string,
+  searchValue: string
+): Promise<CrmStatus | null> {
+  // Pass 1: only open orders (most likely the current campaign lead)
+  const openItem = await ksiFetch({
     ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
-    oa_email: email,
+    [searchParam]: searchValue,
+    oa_flag_aberta: "1",
+  });
+
+  if (openItem?.sucesso === "1" && openItem.dados?.length > 0) {
+    const best = pickBestOrder(openItem.dados);
+    if (best) return toCrmStatus(best);
+  }
+
+  // Pass 2: all orders (open + closed) — pick most recent
+  const allItem = await ksiFetch({
+    ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
+    [searchParam]: searchValue,
     oa_flag_aberta: "0",
   });
 
-  if (item?.sucesso === "1" && item.dados?.length > 0) {
-    const best = pickBestOrder(item.dados);
-    return best ? toCrmStatus(best) : null;
+  if (allItem?.sucesso === "1" && allItem.dados?.length > 0) {
+    const best = pickBestOrder(allItem.dados);
+    if (best) return toCrmStatus(best);
   }
+
   return null;
 }
 
-async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
-  const item = await ksiFetch({
-    ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
-    oa_telefone: phone,
-    oa_flag_aberta: "0",
-  });
+async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
+  return queryKsi("oa_email", email);
+}
 
-  if (item?.sucesso === "1" && item.dados?.length > 0) {
-    const best = pickBestOrder(item.dados);
-    return best ? toCrmStatus(best) : null;
-  }
-  return null;
+async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
+  return queryKsi("oa_telefone", phone);
 }
 
 // ---------- Main Handler ----------
