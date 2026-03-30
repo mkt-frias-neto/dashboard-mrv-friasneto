@@ -211,12 +211,11 @@ export function aggregateByAd(rows: CampaignRow[]): AdAggregate[] {
   return Object.values(map);
 }
 
-// --- Ad Previews ---
-// Add your ad creative image URLs here
+// --- Ad Previews with Facebook Embed ---
 export interface AdPreview {
   adName: string;
   type: "image" | "video";
-  thumbnailUrl: string;
+  facebookPostUrl: string;
   description: string;
 }
 
@@ -224,13 +223,13 @@ export const adPreviews: AdPreview[] = [
   {
     adName: "Arte MRV",
     type: "image",
-    thumbnailUrl: "", // Add the creative image URL here
+    facebookPostUrl: "https://www.facebook.com/100064523509127/posts/1379497087544395/",
     description: "Arte estatica do empreendimento Piazza di Viena",
   },
   {
     adName: "Vídeos MRV",
     type: "video",
-    thumbnailUrl: "", // Add the video thumbnail URL here
+    facebookPostUrl: "https://www.facebook.com/100064523509127/posts/1379494027544701/",
     description: "Video promocional do empreendimento Piazza di Viena",
   },
 ];
