@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
-  getCampaignData,
   aggregateMetrics,
   applyFilters,
   aggregateByDay,
@@ -10,6 +9,7 @@ import {
   getUniqueCampaigns,
   getUniqueAdSets,
   getUniqueAdNames,
+  type CampaignRow,
   type Filters,
 } from "@/lib/data";
 import MetricCard from "./MetricCard";
@@ -26,6 +26,11 @@ const DATE_PRESETS = [
 ];
 
 export default function Dashboard() {
+  const [allData, setAllData] = useState<CampaignRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
     customStart: null,
@@ -36,10 +41,24 @@ export default function Dashboard() {
   });
   const [showCustomDate, setShowCustomDate] = useState(false);
 
-  const allData = getCampaignData();
-  const campaigns = getUniqueCampaigns(allData);
-  const adSets = getUniqueAdSets(allData);
-  const adNames = getUniqueAdNames(allData);
+  useEffect(() => {
+    fetch("/api/campaign-data")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.data) {
+          setAllData(json.data);
+          setUpdatedAt(json.updatedAt ?? null);
+        } else {
+          setError(json.error ?? "Erro ao carregar dados");
+        }
+      })
+      .catch(() => setError("Erro de conexao"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const campaigns = useMemo(() => getUniqueCampaigns(allData), [allData]);
+  const adSets = useMemo(() => getUniqueAdSets(allData), [allData]);
+  const adNames = useMemo(() => getUniqueAdNames(allData), [allData]);
 
   const filtered = useMemo(() => applyFilters(allData, filters), [allData, filters]);
   const metrics = useMemo(() => aggregateMetrics(filtered), [filtered]);
@@ -93,105 +112,130 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Date Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          {DATE_PRESETS.map((f) => (
-            <button
-              key={f.label}
-              onClick={() => handlePreset(f.days)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                isPresetActive && filters.daysBack === f.days
-                  ? "bg-brand-blue-700 text-white shadow-md"
-                  : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+        {/* Loading / Error */}
+        {loading && (
+          <div className="text-center py-12">
+            <div className="inline-block w-8 h-8 border-4 border-brand-blue-700 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-500 mt-3 text-sm">Carregando dados do Google Sheets...</p>
+          </div>
+        )}
 
-          <div className="w-px h-8 bg-gray-300 mx-1" />
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
 
-          <button
-            onClick={handleCustomToggle}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              showCustomDate
-                ? "bg-brand-orange-500 text-white shadow-md"
-                : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
-            }`}
-          >
-            Personalizado
-          </button>
+        {!loading && !error && (
+          <>
+            {/* Updated at */}
+            {updatedAt && (
+              <p className="text-[11px] text-gray-400">
+                Dados atualizados em: {new Date(updatedAt).toLocaleString("pt-BR")}
+              </p>
+            )}
 
-          {showCustomDate && (
-            <div className="flex items-center gap-2 bg-white border border-brand-orange-300 rounded-lg px-3 py-1.5 shadow-sm">
-              <label className="text-xs text-gray-500">De:</label>
-              <input
-                type="date"
-                value={filters.customStart ?? ""}
-                onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, customStart: e.target.value || null, daysBack: null }))
-                }
-                className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
-              />
-              <label className="text-xs text-gray-500">Ate:</label>
-              <input
-                type="date"
-                value={filters.customEnd ?? ""}
-                onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, customEnd: e.target.value || null, daysBack: null }))
-                }
-                className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
-              />
-              {(filters.customStart || filters.customEnd) && (
+            {/* Date Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              {DATE_PRESETS.map((f) => (
                 <button
-                  onClick={() => setFilters((prev) => ({ ...prev, customStart: null, customEnd: null }))}
-                  className="text-xs text-red-500 hover:text-red-700 ml-1"
+                  key={f.label}
+                  onClick={() => handlePreset(f.days)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    isPresetActive && filters.daysBack === f.days
+                      ? "bg-brand-blue-700 text-white shadow-md"
+                      : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
+                  }`}
                 >
-                  Limpar
+                  {f.label}
                 </button>
+              ))}
+
+              <div className="w-px h-8 bg-gray-300 mx-1" />
+
+              <button
+                onClick={handleCustomToggle}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  showCustomDate
+                    ? "bg-brand-orange-500 text-white shadow-md"
+                    : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
+                }`}
+              >
+                Personalizado
+              </button>
+
+              {showCustomDate && (
+                <div className="flex items-center gap-2 bg-white border border-brand-orange-300 rounded-lg px-3 py-1.5 shadow-sm">
+                  <label className="text-xs text-gray-500">De:</label>
+                  <input
+                    type="date"
+                    value={filters.customStart ?? ""}
+                    onChange={(e) =>
+                      setFilters((prev) => ({ ...prev, customStart: e.target.value || null, daysBack: null }))
+                    }
+                    className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
+                  />
+                  <label className="text-xs text-gray-500">Ate:</label>
+                  <input
+                    type="date"
+                    value={filters.customEnd ?? ""}
+                    onChange={(e) =>
+                      setFilters((prev) => ({ ...prev, customEnd: e.target.value || null, daysBack: null }))
+                    }
+                    className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
+                  />
+                  {(filters.customStart || filters.customEnd) && (
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, customStart: null, customEnd: null }))}
+                      className="text-xs text-red-500 hover:text-red-700 ml-1"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* Campaign / AdSet / Ad Filters */}
-        <FilterBar
-          campaigns={campaigns}
-          adSets={adSets}
-          adNames={adNames}
-          filters={filters}
-          onChange={setFilters}
-        />
+            {/* Campaign / AdSet / Ad Filters */}
+            <FilterBar
+              campaigns={campaigns}
+              adSets={adSets}
+              adNames={adNames}
+              filters={filters}
+              onChange={setFilters}
+            />
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
-          <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma estimada" />
-          <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
-          <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
-          <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />
-        </div>
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
+              <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma estimada" />
+              <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
+              <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
+              <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />
+            </div>
 
-        {/* Secondary KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          <MetricCard title="CPM" value={formatBRL(metrics.avgCPM)} icon="chart" color="light" small />
-          <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
-          <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
-          <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
-          <MetricCard title="Frequencia" value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
-        </div>
+            {/* Secondary KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <MetricCard title="CPM" value={formatBRL(metrics.avgCPM)} icon="chart" color="light" small />
+              <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
+              <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
+              <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
+              <MetricCard title="Frequencia" value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
+            </div>
 
-        {/* Chart */}
-        <div className="bg-white rounded-xl card-shadow p-6">
-          <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Desempenho Diario</h2>
-          <DailyChart data={dailyData} />
-        </div>
+            {/* Chart */}
+            <div className="bg-white rounded-xl card-shadow p-6">
+              <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Desempenho Diario</h2>
+              <DailyChart data={dailyData} />
+            </div>
 
-        {/* Ad Performance Cards */}
-        <div>
-          <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Comparativo por Anuncio</h2>
-          <AdPerformanceCards data={adData} />
-        </div>
+            {/* Ad Performance Cards */}
+            <div>
+              <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Comparativo por Anuncio</h2>
+              <AdPerformanceCards data={adData} />
+            </div>
+          </>
+        )}
       </main>
 
       {/* Footer */}

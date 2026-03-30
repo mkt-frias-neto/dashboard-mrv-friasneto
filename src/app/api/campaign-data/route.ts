@@ -1,0 +1,86 @@
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const SHEET_ID = "1OxCJuvQ4SXjteAAn3lS8JE4BAn12mg0X-DvX1o7hUi8";
+const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+
+function parseNum(val: string): number {
+  if (!val || val.trim() === "") return 0;
+  return parseFloat(val.replace(/\./g, "").replace(",", "."));
+}
+
+export async function GET() {
+  try {
+    const res = await fetch(CSV_URL, {
+      next: { revalidate: 1800 }, // cache 30 min
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: "Failed to fetch spreadsheet", status: res.status },
+        { status: 502 }
+      );
+    }
+
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.trim() !== "");
+
+    if (lines.length < 2) {
+      return NextResponse.json({ data: [] });
+    }
+
+    // Skip header row
+    const rows = lines.slice(1).map((line) => {
+      // Parse CSV respecting quoted fields
+      const fields: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+        } else if (ch === "," && !inQuotes) {
+          fields.push(current.trim());
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      fields.push(current.trim());
+
+      return {
+        reach: parseNum(fields[0] ?? ""),
+        impressions: parseNum(fields[1] ?? ""),
+        frequency: parseNum(fields[2] ?? ""),
+        amountSpent: parseNum(fields[3] ?? ""),
+        cpm: parseNum(fields[4] ?? ""),
+        linkClicks: parseNum(fields[5] ?? ""),
+        cpc: parseNum(fields[6] ?? ""),
+        ctr: parseNum(fields[7] ?? ""),
+        costPerLead: parseNum(fields[8] ?? ""),
+        leads: parseNum(fields[9] ?? ""),
+        campaignName: fields[11] ?? "",
+        adSetName: fields[12] ?? "",
+        adName: fields[13] ?? "",
+        day: (fields[14] ?? "").replace(/\r/g, ""),
+      };
+    });
+
+    return NextResponse.json(
+      { data: rows, updatedAt: new Date().toISOString() },
+      {
+        headers: {
+          "Cache-Control": "s-maxage=1800, stale-while-revalidate=3600",
+        },
+      }
+    );
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message ?? "Unknown error" },
+      { status: 500 }
+    );
+  }
+}

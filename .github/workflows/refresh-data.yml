@@ -1,0 +1,18 @@
+name: Refresh Dashboard Data
+
+on:
+  schedule:
+    # 7:00 AM BRT = 10:00 UTC
+    - cron: "0 10 * * *"
+    # 11:00 AM BRT = 14:00 UTC
+    - cron: "0 14 * * *"
+  workflow_dispatch: # permite rodar manualmente
+
+jobs:
+  trigger-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel Deploy
+        run: |
+          curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_bGamXwDbWSLr7DSJgAI9L7fQzJCg/YUB3mzwdl7"
+          echo "Deploy triggered at $(date -u '+%Y-%m-%d %H:%M UTC')"
