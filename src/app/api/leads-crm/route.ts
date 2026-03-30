@@ -289,21 +289,29 @@ export async function GET() {
     }
 
     // 2. Query KSI for each lead
-    const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string }> = [];
+    // Closure reasons whose name contains these keywords = VENDA (sale)
+    const vendaKeywords = ["comprou", "venda", "vendido", "fechou negócio", "fechou negocio", "pós venda", "pos venda"];
+
+    const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string; closureType: string }> = [];
     const batchSize = 3;
 
     for (let i = 0; i < leads.length; i += batchSize) {
       const batch = leads.slice(i, i + batchSize);
       const results = await Promise.all(
         batch.map(async (lead) => {
-          // Search by email AND phone combined, pick best match
           const crm = await queryKsiCombined(lead.email, lead.phoneFormatted);
-          // Resolve motivo name if we have an ID
           let motivoNome = "";
           if (crm?.motivoFechamento) {
             motivoNome = closureReasons[crm.motivoFechamento] ?? crm.motivoFechamento;
           }
-          return { ...lead, crm, motivoNome };
+          // Determine closure type: "venda", "lost", or ""
+          let closureType = "";
+          if (crm?.situacao === "FECHADA") {
+            const motivoLower = motivoNome.toLowerCase();
+            const isVenda = vendaKeywords.some((kw) => motivoLower.includes(kw));
+            closureType = isVenda ? "venda" : "lost";
+          }
+          return { ...lead, crm, motivoNome, closureType };
         })
       );
       enriched.push(...results);
@@ -311,14 +319,13 @@ export async function GET() {
 
     // 3. Summary
     const total = enriched.length;
-    const withCrm = enriched.filter((l) => l.crm !== null).length;
     const aberta = enriched.filter((l) => l.crm?.situacao === "ABERTA").length;
-    const fechada = enriched.filter((l) => l.crm?.situacao === "FECHADA").length;
-    const semCrm = enriched.filter((l) => l.crm === null).length;
+    const lost = enriched.filter((l) => l.closureType === "lost").length;
+    const venda = enriched.filter((l) => l.closureType === "venda").length;
 
     return NextResponse.json({
       leads: enriched,
-      summary: { total, withCrm, aberta, fechada, semCrm },
+      summary: { total, aberta, lost, venda },
       closureReasons,
       updatedAt: new Date().toISOString(),
     });

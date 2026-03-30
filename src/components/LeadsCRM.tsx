@@ -24,21 +24,29 @@ interface LeadItem {
   whatsapp: string;
   crm: CrmData | null;
   motivoNome: string;
+  closureType: string; // "venda" | "lost" | ""
 }
 
 interface Summary {
   total: number;
-  withCrm: number;
   aberta: number;
-  fechada: number;
-  semCrm: number;
+  lost: number;
+  venda: number;
 }
 
 const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
   ABERTA: { label: "Em Atendimento", bg: "bg-blue-100", text: "text-blue-800" },
-  FECHADA: { label: "Fechado", bg: "bg-green-100", text: "text-green-800" },
-  DESCONHECIDO: { label: "Desconhecido", bg: "bg-gray-100", text: "text-gray-600" },
+  FECHADA_lost: { label: "Lost", bg: "bg-red-100", text: "text-red-700" },
+  FECHADA_venda: { label: "Venda", bg: "bg-green-100", text: "text-green-800" },
 };
+
+function getStatusConfig(lead: LeadItem) {
+  if (lead.crm?.situacao === "ABERTA") return statusConfig.ABERTA;
+  if (lead.closureType === "venda") return statusConfig.FECHADA_venda;
+  if (lead.closureType === "lost") return statusConfig.FECHADA_lost;
+  if (lead.crm?.situacao === "FECHADA") return statusConfig.FECHADA_lost;
+  return { label: "Nao encontrado", bg: "bg-yellow-100", text: "text-yellow-800" };
+}
 
 export default function LeadsCRM() {
   const [leads, setLeads] = useState<LeadItem[]>([]);
@@ -112,18 +120,18 @@ export default function LeadsCRM() {
             pct={summary.total > 0 ? (summary.aberta / summary.total) * 100 : 0}
           />
           <FunnelCard
-            label="Fechados"
-            value={summary.fechada}
-            color="bg-green-500"
-            icon="✅"
-            pct={summary.total > 0 ? (summary.fechada / summary.total) * 100 : 0}
+            label="Lost"
+            value={summary.lost}
+            color="bg-red-500"
+            icon="❌"
+            pct={summary.total > 0 ? (summary.lost / summary.total) * 100 : 0}
           />
           <FunnelCard
-            label="Sem registro CRM"
-            value={summary.semCrm}
-            color="bg-gray-400"
-            icon="❓"
-            pct={summary.total > 0 ? (summary.semCrm / summary.total) * 100 : 0}
+            label="Venda"
+            value={summary.venda}
+            color="bg-green-500"
+            icon="🏆"
+            pct={summary.total > 0 ? (summary.venda / summary.total) * 100 : 0}
           />
         </div>
       )}
@@ -152,11 +160,7 @@ export default function LeadsCRM() {
             </thead>
             <tbody>
               {leads.map((lead, i) => {
-                const st = statusConfig[lead.crm?.situacao ?? ""] ?? {
-                  label: "Nao encontrado",
-                  bg: "bg-yellow-100",
-                  text: "text-yellow-800",
-                };
+                const st = getStatusConfig(lead);
                 const isClosed = lead.crm?.situacao === "FECHADA";
                 return (
                   <tr
@@ -177,9 +181,7 @@ export default function LeadsCRM() {
                     </td>
                     <td className="px-3 py-2.5 text-xs">{lead.adName}</td>
                     <td className="px-3 py-2.5 text-center">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-1 rounded-full ${st.bg} ${st.text}`}
-                      >
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${st.bg} ${st.text}`}>
                         {st.label}
                       </span>
                     </td>
