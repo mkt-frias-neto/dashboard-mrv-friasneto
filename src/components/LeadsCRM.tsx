@@ -9,6 +9,7 @@ interface CrmData {
   idOrdemAtendimento: string;
   operacao: string;
   usuarioStatus: string;
+  motivoFechamento: string;
 }
 
 interface LeadItem {
@@ -22,6 +23,7 @@ interface LeadItem {
   phoneFormatted: string;
   whatsapp: string;
   crm: CrmData | null;
+  motivoNome: string;
 }
 
 interface Summary {
@@ -101,12 +103,7 @@ export default function LeadsCRM() {
       {/* Funnel Cards */}
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <FunnelCard
-            label="Total Leads"
-            value={summary.total}
-            color="bg-brand-blue-700"
-            icon="🎯"
-          />
+          <FunnelCard label="Total Leads" value={summary.total} color="bg-brand-blue-700" icon="🎯" />
           <FunnelCard
             label="Em Atendimento"
             value={summary.aberta}
@@ -136,9 +133,7 @@ export default function LeadsCRM() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-brand-blue-900">Leads x CRM</h2>
           {updatedAt && (
-            <span className="text-[10px] text-gray-400">
-              Atualizado: {fmtDate(updatedAt)}
-            </span>
+            <span className="text-[10px] text-gray-400">Atualizado: {fmtDate(updatedAt)}</span>
           )}
         </div>
 
@@ -150,8 +145,8 @@ export default function LeadsCRM() {
                 <th className="text-left px-3 py-2.5">Nome</th>
                 <th className="text-left px-3 py-2.5">Contato</th>
                 <th className="text-left px-3 py-2.5">Anuncio</th>
-                <th className="text-center px-3 py-2.5">Plataforma</th>
                 <th className="text-center px-3 py-2.5">Status CRM</th>
+                <th className="text-left px-3 py-2.5">Motivo</th>
                 <th className="text-left px-3 py-2.5 rounded-tr-lg">Responsavel</th>
               </tr>
             </thead>
@@ -162,6 +157,7 @@ export default function LeadsCRM() {
                   bg: "bg-yellow-100",
                   text: "text-yellow-800",
                 };
+                const isClosed = lead.crm?.situacao === "FECHADA";
                 return (
                   <tr
                     key={lead.id}
@@ -181,11 +177,6 @@ export default function LeadsCRM() {
                     </td>
                     <td className="px-3 py-2.5 text-xs">{lead.adName}</td>
                     <td className="px-3 py-2.5 text-center">
-                      <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-medium">
-                        {lead.platform}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
                       <span
                         className={`text-[10px] font-bold px-2 py-1 rounded-full ${st.bg} ${st.text}`}
                       >
@@ -193,9 +184,16 @@ export default function LeadsCRM() {
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-xs">
-                      {lead.crm?.nome ?? (
+                      {isClosed && lead.motivoNome ? (
+                        <span className="text-gray-700">{lead.motivoNome}</span>
+                      ) : isClosed ? (
+                        <span className="text-gray-400 italic">Nao informado</span>
+                      ) : (
                         <span className="text-gray-300">—</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs">
+                      {lead.crm?.nome ?? <span className="text-gray-300">—</span>}
                     </td>
                   </tr>
                 );

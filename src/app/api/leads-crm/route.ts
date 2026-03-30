@@ -10,7 +10,8 @@ const KSI_BASE = "https://www.friasneto.com.br/kurole_include/api/webservice/esc
 const KSI_SCOPE_ID = "68";
 const KSI_TOKEN = "252c72ea3daa906ce07f3619c5eca804";
 
-// Parse CSV line respecting quotes
+// ---------- Helpers ----------
+
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
   let current = "";
@@ -30,24 +31,40 @@ function parseCsvLine(line: string): string[] {
   return fields;
 }
 
-// Format phone from "p:+5519981829838" to "(19) 98182-9838"
 function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
-  // Remove country code 55
   const local = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (local.length === 11) {
-    return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
-  }
-  if (local.length === 10) {
-    return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
-  }
+  if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
   return raw;
 }
 
-// Clean email
 function cleanEmail(raw: string): string {
   return raw.trim().toLowerCase();
 }
+
+// Title Case: "JOÃO DA SILVA" or "joão" → "Joao da Silva"
+function toTitleCase(name: string): string {
+  // Remove non-letter chars (superscripts, emojis, etc) keeping spaces, hyphens, apostrophes
+  const cleaned = name
+    .normalize("NFC")
+    .replace(/[^a-zA-ZÀ-ÿ\s'-]/g, "")
+    .trim();
+  if (!cleaned) return name.trim();
+  const lower = cleaned;
+
+  const smallWords = new Set(["de", "da", "do", "dos", "das", "e"]);
+  return lower
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, i) => {
+      if (i > 0 && smallWords.has(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+// ---------- Interfaces ----------
 
 interface LeadRow {
   id: string;
@@ -73,84 +90,112 @@ interface CrmStatus {
   idOrdemAtendimento: string;
   operacao: string;
   usuarioStatus: string;
+  motivoFechamento: string;
+}
+
+// ---------- KSI API ----------
+
+async function ksiFetch(params: Record<string, string>): Promise<any> {
+  try {
+    const url = new URL(KSI_BASE);
+    url.searchParams.set("id", KSI_SCOPE_ID);
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
+    }
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${KSI_TOKEN}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json) ? json[0] : json;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch closure reasons list (cached per request)
+let closureReasonsCache: Record<string, string> | null = null;
+
+async function getClosureReasons(): Promise<Record<string, string>> {
+  if (closureReasonsCache) return closureReasonsCache;
+
+  const operacoes = ["V", "E", "L"];
+  const map: Record<string, string> = {};
+
+  for (const op of operacoes) {
+    const result = await ksiFetch({
+      ws_destino: "ORDEM_ATENDIMENTO_FECHAMENTO_MOTIVOS",
+      oa_operacao: op,
+    });
+    if (result?.sucesso === "1" && result.dados) {
+      for (const d of result.dados) {
+        map[d.id] = d.nome;
+      }
+    }
+  }
+
+  closureReasonsCache = map;
+  return map;
 }
 
 async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
-  try {
-    const url = new URL(KSI_BASE);
-    url.searchParams.set("id", KSI_SCOPE_ID);
-    url.searchParams.set("ws_destino", "ORDEM_ATENDIMENTO_RESPONSAVEIS");
-    url.searchParams.set("oa_email", email);
-    url.searchParams.set("oa_flag_aberta", "0");
+  const item = await ksiFetch({
+    ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
+    oa_email: email,
+    oa_flag_aberta: "0",
+  });
 
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${KSI_TOKEN}` },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    const item = Array.isArray(json) ? json[0] : json;
-
-    if (item?.sucesso === "1" && item.dados?.length > 0) {
-      const d = item.dados[0];
-      return {
-        situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
-        nome: d.nome ?? "",
-        idResponsavel: d.id_responsavel ?? "",
-        idOrdemAtendimento: d.id_ordem_atendimento ?? "",
-        operacao: d.operacao ?? "",
-        usuarioStatus: d.usuario_status ?? "",
-      };
-    }
-    return null;
-  } catch {
-    return null;
+  if (item?.sucesso === "1" && item.dados?.length > 0) {
+    const d = item.dados[0];
+    return {
+      situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
+      nome: d.nome ?? "",
+      idResponsavel: d.id_responsavel ?? "",
+      idOrdemAtendimento: d.id_ordem_atendimento ?? "",
+      operacao: d.operacao ?? "",
+      usuarioStatus: d.usuario_status ?? "",
+      motivoFechamento: d.motivo_fechamento ?? d.id_motivo_fechamento ?? "",
+    };
   }
+  return null;
 }
 
 async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
-  try {
-    const url = new URL(KSI_BASE);
-    url.searchParams.set("id", KSI_SCOPE_ID);
-    url.searchParams.set("ws_destino", "ORDEM_ATENDIMENTO_RESPONSAVEIS");
-    url.searchParams.set("oa_telefone", phone);
-    url.searchParams.set("oa_flag_aberta", "0");
+  const item = await ksiFetch({
+    ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
+    oa_telefone: phone,
+    oa_flag_aberta: "0",
+  });
 
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${KSI_TOKEN}` },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    const item = Array.isArray(json) ? json[0] : json;
-
-    if (item?.sucesso === "1" && item.dados?.length > 0) {
-      const d = item.dados[0];
-      return {
-        situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
-        nome: d.nome ?? "",
-        idResponsavel: d.id_responsavel ?? "",
-        idOrdemAtendimento: d.id_ordem_atendimento ?? "",
-        operacao: d.operacao ?? "",
-        usuarioStatus: d.usuario_status ?? "",
-      };
-    }
-    return null;
-  } catch {
-    return null;
+  if (item?.sucesso === "1" && item.dados?.length > 0) {
+    const d = item.dados[0];
+    return {
+      situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
+      nome: d.nome ?? "",
+      idResponsavel: d.id_responsavel ?? "",
+      idOrdemAtendimento: d.id_ordem_atendimento ?? "",
+      operacao: d.operacao ?? "",
+      usuarioStatus: d.usuario_status ?? "",
+      motivoFechamento: d.motivo_fechamento ?? d.id_motivo_fechamento ?? "",
+    };
   }
+  return null;
 }
+
+// ---------- Main Handler ----------
 
 export async function GET() {
   try {
-    // 1. Fetch leads from Google Sheets
-    const csvRes = await fetch(LEADS_CSV_URL, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
+    // Reset cache per request
+    closureReasonsCache = null;
+
+    // 1. Fetch leads + closure reasons in parallel
+    const [csvRes, closureReasons] = await Promise.all([
+      fetch(LEADS_CSV_URL, { headers: { "User-Agent": "Mozilla/5.0" } }),
+      getClosureReasons(),
+    ]);
+
     if (!csvRes.ok) {
       return NextResponse.json({ error: "Failed to fetch leads sheet" }, { status: 502 });
     }
@@ -161,11 +206,9 @@ export async function GET() {
       return NextResponse.json({ leads: [], summary: {} });
     }
 
-    // Parse header
     const headers = parseCsvLine(lines[0]);
     const colIndex = (name: string) => headers.findIndex((h) => h === name);
 
-    // Parse rows
     const leads: LeadRow[] = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
@@ -178,7 +221,7 @@ export async function GET() {
         formName: cols[colIndex("form_name")] ?? "",
         platform: cols[colIndex("platform")] ?? "",
         whatsapp: cols[colIndex("qual_o_seu_whatsapp?")] ?? "",
-        firstName: cols[colIndex("first_name")] ?? "",
+        firstName: toTitleCase(cols[colIndex("first_name")] ?? ""),
         email: cleanEmail(cols[colIndex("email")] ?? ""),
         phoneRaw: cols[colIndex("phone_number")] ?? "",
         phoneFormatted: formatPhone(cols[colIndex("phone_number")] ?? ""),
@@ -187,27 +230,30 @@ export async function GET() {
       });
     }
 
-    // 2. Query KSI for each lead (parallel with concurrency limit)
-    const enriched: Array<LeadRow & { crm: CrmStatus | null }> = [];
-
-    // Process in batches of 3 to avoid overwhelming the KSI API
+    // 2. Query KSI for each lead
+    const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string }> = [];
     const batchSize = 3;
+
     for (let i = 0; i < leads.length; i += batchSize) {
       const batch = leads.slice(i, i + batchSize);
       const results = await Promise.all(
         batch.map(async (lead) => {
-          // Try email first, then phone
           let crm = await queryKsiByEmail(lead.email);
           if (!crm && lead.phoneFormatted) {
             crm = await queryKsiByPhone(lead.phoneFormatted);
           }
-          return { ...lead, crm };
+          // Resolve motivo name if we have an ID
+          let motivoNome = "";
+          if (crm?.motivoFechamento) {
+            motivoNome = closureReasons[crm.motivoFechamento] ?? crm.motivoFechamento;
+          }
+          return { ...lead, crm, motivoNome };
         })
       );
       enriched.push(...results);
     }
 
-    // 3. Build summary
+    // 3. Summary
     const total = enriched.length;
     const withCrm = enriched.filter((l) => l.crm !== null).length;
     const aberta = enriched.filter((l) => l.crm?.situacao === "ABERTA").length;
@@ -217,6 +263,7 @@ export async function GET() {
     return NextResponse.json({
       leads: enriched,
       summary: { total, withCrm, aberta, fechada, semCrm },
+      closureReasons,
       updatedAt: new Date().toISOString(),
     });
   } catch (err: any) {
