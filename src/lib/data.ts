@@ -15,11 +15,6 @@ export interface CampaignRow {
   day: string;
 }
 
-function parseNum(val: string): number {
-  if (!val || val.trim() === "") return 0;
-  return parseFloat(val.replace(/\./g, "").replace(",", "."));
-}
-
 const rawData: CampaignRow[] = [
   {
     reach: 3000, impressions: 3890, frequency: 1.3, amountSpent: 44.72,
@@ -75,6 +70,52 @@ export function getCampaignData(): CampaignRow[] {
   return rawData;
 }
 
+// --- Unique filter values ---
+export function getUniqueCampaigns(rows: CampaignRow[]): string[] {
+  return Array.from(new Set(rows.map((r) => r.campaignName)));
+}
+export function getUniqueAdSets(rows: CampaignRow[]): string[] {
+  return Array.from(new Set(rows.map((r) => r.adSetName)));
+}
+export function getUniqueAdNames(rows: CampaignRow[]): string[] {
+  return Array.from(new Set(rows.map((r) => r.adName)));
+}
+
+// --- Filters ---
+export interface Filters {
+  daysBack: number | null;
+  campaign: string | null;
+  adSet: string | null;
+  adName: string | null;
+}
+
+export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow[] {
+  let result = rows;
+
+  if (filters.daysBack !== null) {
+    const today = new Date("2026-03-30");
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - filters.daysBack + 1);
+    result = result.filter((r) => {
+      const d = new Date(r.day);
+      return d >= startDate && d <= today;
+    });
+  }
+
+  if (filters.campaign) {
+    result = result.filter((r) => r.campaignName === filters.campaign);
+  }
+  if (filters.adSet) {
+    result = result.filter((r) => r.adSetName === filters.adSet);
+  }
+  if (filters.adName) {
+    result = result.filter((r) => r.adName === filters.adName);
+  }
+
+  return result;
+}
+
+// --- Aggregation ---
 export interface AggregatedMetrics {
   totalReach: number;
   totalImpressions: number;
@@ -114,17 +155,6 @@ export function aggregateMetrics(rows: CampaignRow[]): AggregatedMetrics {
   };
 }
 
-export function filterByDateRange(rows: CampaignRow[], daysBack: number | null): CampaignRow[] {
-  if (daysBack === null) return rows;
-  const today = new Date("2026-03-30");
-  const startDate = new Date(today);
-  startDate.setDate(today.getDate() - daysBack + 1);
-  return rows.filter((r) => {
-    const d = new Date(r.day);
-    return d >= startDate && d <= today;
-  });
-}
-
 export interface DailyAggregate {
   day: string;
   reach: number;
@@ -157,13 +187,15 @@ export interface AdAggregate {
   clicks: number;
   leads: number;
   ctr: number;
+  cpc: number;
+  cpl: number;
 }
 
 export function aggregateByAd(rows: CampaignRow[]): AdAggregate[] {
   const map: Record<string, AdAggregate> = {};
   for (const r of rows) {
     if (!map[r.adName]) {
-      map[r.adName] = { adName: r.adName, reach: 0, impressions: 0, spent: 0, clicks: 0, leads: 0, ctr: 0 };
+      map[r.adName] = { adName: r.adName, reach: 0, impressions: 0, spent: 0, clicks: 0, leads: 0, ctr: 0, cpc: 0, cpl: 0 };
     }
     map[r.adName].reach += r.reach;
     map[r.adName].impressions += r.impressions;
@@ -173,6 +205,32 @@ export function aggregateByAd(rows: CampaignRow[]): AdAggregate[] {
   }
   for (const ad of Object.values(map)) {
     ad.ctr = ad.impressions > 0 ? (ad.clicks / ad.impressions) * 100 : 0;
+    ad.cpc = ad.clicks > 0 ? ad.spent / ad.clicks : 0;
+    ad.cpl = ad.leads > 0 ? ad.spent / ad.leads : 0;
   }
   return Object.values(map);
 }
+
+// --- Ad Previews ---
+// Add your ad creative image URLs here
+export interface AdPreview {
+  adName: string;
+  type: "image" | "video";
+  thumbnailUrl: string;
+  description: string;
+}
+
+export const adPreviews: AdPreview[] = [
+  {
+    adName: "Arte MRV",
+    type: "image",
+    thumbnailUrl: "", // Add the creative image URL here
+    description: "Arte estatica do empreendimento Piazza di Viena",
+  },
+  {
+    adName: "Vídeos MRV",
+    type: "video",
+    thumbnailUrl: "", // Add the video thumbnail URL here
+    description: "Video promocional do empreendimento Piazza di Viena",
+  },
+];

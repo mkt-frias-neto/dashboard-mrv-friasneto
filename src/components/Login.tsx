@@ -33,7 +33,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
           />
           <div className="w-px h-10 bg-gray-300" />
           <img
-            src="https://upload.wikimedia.org/wikipedia/commons/a/ac/MRV_Marca_2019.jpg"
+            src="https://atletico.com.br/wp-content/uploads/2019/10/Logo-Gradiente.png"
             alt="MRV"
             className="h-10 object-contain"
           />

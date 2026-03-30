@@ -2,8 +2,7 @@
 
 import {
   ResponsiveContainer,
-  ComposedChart,
-  Bar,
+  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -29,34 +28,36 @@ export default function DailyChart({ data }: Props) {
 
   return (
     <ResponsiveContainer width="100%" height={350}>
-      <ComposedChart data={chartData}>
+      <LineChart data={chartData}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="day" tick={{ fontSize: 12 }} />
         <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
         <Tooltip
-          contentStyle={{ borderRadius: 8, border: "1px solid #E5E7EB" }}
+          contentStyle={{ borderRadius: 12, border: "1px solid #E5E7EB", boxShadow: "0 4px 12px rgba(0,0,0,.08)" }}
           formatter={(value: number, name: string) => {
             if (name === "Investimento") return [`R$ ${value.toFixed(2)}`, name];
             return [value.toLocaleString("pt-BR"), name];
           }}
         />
         <Legend />
-        <Bar
+        <Line
           yAxisId="left"
           dataKey="impressions"
           name="Impressoes"
-          fill="#1B3A5C"
-          radius={[4, 4, 0, 0]}
-          barSize={32}
+          stroke="#1B3A5C"
+          strokeWidth={3}
+          dot={{ fill: "#1B3A5C", r: 5, strokeWidth: 2, stroke: "#fff" }}
+          activeDot={{ r: 7 }}
         />
-        <Bar
+        <Line
           yAxisId="left"
           dataKey="clicks"
           name="Cliques"
-          fill="#F7941D"
-          radius={[4, 4, 0, 0]}
-          barSize={32}
+          stroke="#F7941D"
+          strokeWidth={3}
+          dot={{ fill: "#F7941D", r: 5, strokeWidth: 2, stroke: "#fff" }}
+          activeDot={{ r: 7 }}
         />
         <Line
           yAxisId="right"
@@ -64,17 +65,20 @@ export default function DailyChart({ data }: Props) {
           name="Investimento"
           stroke="#FFC107"
           strokeWidth={3}
-          dot={{ fill: "#FFC107", r: 5 }}
+          strokeDasharray="6 3"
+          dot={{ fill: "#FFC107", r: 5, strokeWidth: 2, stroke: "#fff" }}
+          activeDot={{ r: 7 }}
         />
-        <Bar
+        <Line
           yAxisId="left"
           dataKey="leads"
           name="Leads"
-          fill="#22C55E"
-          radius={[4, 4, 0, 0]}
-          barSize={32}
+          stroke="#22C55E"
+          strokeWidth={3}
+          dot={{ fill: "#22C55E", r: 6, strokeWidth: 2, stroke: "#fff" }}
+          activeDot={{ r: 8 }}
         />
-      </ComposedChart>
+      </LineChart>
     </ResponsiveContainer>
   );
 }
