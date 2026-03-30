@@ -6,6 +6,7 @@ interface MetricCardProps {
   icon: string;
   color: "orange" | "blue" | "yellow" | "green" | "light";
   small?: boolean;
+  subtitle?: string;
 }
 
 const colorMap = {
@@ -29,7 +30,7 @@ const iconMap: Record<string, string> = {
   refresh: "🔄",
 };
 
-export default function MetricCard({ title, value, icon, color, small }: MetricCardProps) {
+export default function MetricCard({ title, value, icon, color, small, subtitle }: MetricCardProps) {
   return (
     <div className={`rounded-xl border-l-4 card-shadow p-4 transition-all hover:scale-[1.02] ${colorMap[color]}`}>
       <div className="flex items-center gap-2 mb-1">
@@ -39,6 +40,9 @@ export default function MetricCard({ title, value, icon, color, small }: MetricC
       <p className={`font-bold text-brand-blue-900 ${small ? "text-lg" : "text-xl sm:text-2xl"}`}>
         {value}
       </p>
+      {subtitle && (
+        <p className="text-[10px] text-gray-400 mt-0.5">{subtitle}</p>
+      )}
     </div>
   );
 }

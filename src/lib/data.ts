@@ -81,13 +81,21 @@ export function getUniqueAdNames(rows: CampaignRow[]): string[] {
 }
 
 // --- Filters ---
+// "yesterday" is a special preset: daysBack = -1
 export interface Filters {
-  daysBack: number | null;
+  daysBack: number | null; // null=total, -1=yesterday, 1+=last N days
   customStart: string | null; // "YYYY-MM-DD"
   customEnd: string | null;   // "YYYY-MM-DD"
   campaign: string | null;
   adSet: string | null;
   adName: string | null;
+}
+
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow[] {
@@ -102,12 +110,23 @@ export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow
       return true;
     });
   } else if (filters.daysBack !== null) {
-    const today = new Date("2026-03-30");
-    const startDate = new Date(today);
-    startDate.setDate(today.getDate() - filters.daysBack + 1);
-    const startStr = startDate.toISOString().split("T")[0];
-    const endStr = today.toISOString().split("T")[0];
-    result = result.filter((r) => r.day >= startStr && r.day <= endStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (filters.daysBack === -1) {
+      // Yesterday only
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const yStr = toDateStr(yesterday);
+      result = result.filter((r) => r.day === yStr);
+    } else {
+      // Last N days (including today)
+      const startDate = new Date(today);
+      startDate.setDate(today.getDate() - filters.daysBack + 1);
+      const startStr = toDateStr(startDate);
+      const endStr = toDateStr(today);
+      result = result.filter((r) => r.day >= startStr && r.day <= endStr);
+    }
   }
 
   if (filters.campaign) {

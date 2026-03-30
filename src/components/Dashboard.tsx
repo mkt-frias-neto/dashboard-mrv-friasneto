@@ -18,7 +18,7 @@ import AdPerformanceCards from "./AdPerformanceCards";
 import FilterBar from "./FilterBar";
 
 const DATE_PRESETS = [
-  { label: "Ontem", days: 1 },
+  { label: "Ontem", days: -1 },
   { label: "7 dias", days: 7 },
   { label: "14 dias", days: 14 },
   { label: "30 dias", days: 30 },
@@ -166,7 +166,7 @@ export default function Dashboard() {
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
-          <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" />
+          <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma estimada" />
           <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
           <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
           <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />
