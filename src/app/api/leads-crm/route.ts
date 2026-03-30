@@ -142,6 +142,42 @@ async function getClosureReasons(): Promise<Record<string, string>> {
   return map;
 }
 
+// Pick best order from multiple results:
+// 1. Prefer ABERTA with highest ID (most recent open order)
+// 2. If no ABERTA, pick FECHADA with highest ID (most recent closed)
+function pickBestOrder(dados: any[]): any | null {
+  if (!dados || dados.length === 0) return null;
+  if (dados.length === 1) return dados[0];
+
+  // Sort by id_ordem_atendimento descending (highest = most recent)
+  const sorted = [...dados].sort((a, b) => {
+    const idA = parseInt(a.id_ordem_atendimento ?? "0", 10);
+    const idB = parseInt(b.id_ordem_atendimento ?? "0", 10);
+    return idB - idA;
+  });
+
+  // Prefer the most recent ABERTA
+  const aberta = sorted.find(
+    (d) => (d.situcao ?? d.situacao ?? "").toUpperCase() === "ABERTA"
+  );
+  if (aberta) return aberta;
+
+  // Otherwise most recent FECHADA
+  return sorted[0];
+}
+
+function toCrmStatus(d: any): CrmStatus {
+  return {
+    situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
+    nome: d.nome ?? "",
+    idResponsavel: d.id_responsavel ?? "",
+    idOrdemAtendimento: d.id_ordem_atendimento ?? "",
+    operacao: d.operacao ?? "",
+    usuarioStatus: d.usuario_status ?? "",
+    motivoFechamento: d.motivo_fechamento ?? d.id_motivo_fechamento ?? "",
+  };
+}
+
 async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
   const item = await ksiFetch({
     ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
@@ -150,16 +186,8 @@ async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
   });
 
   if (item?.sucesso === "1" && item.dados?.length > 0) {
-    const d = item.dados[0];
-    return {
-      situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
-      nome: d.nome ?? "",
-      idResponsavel: d.id_responsavel ?? "",
-      idOrdemAtendimento: d.id_ordem_atendimento ?? "",
-      operacao: d.operacao ?? "",
-      usuarioStatus: d.usuario_status ?? "",
-      motivoFechamento: d.motivo_fechamento ?? d.id_motivo_fechamento ?? "",
-    };
+    const best = pickBestOrder(item.dados);
+    return best ? toCrmStatus(best) : null;
   }
   return null;
 }
@@ -172,16 +200,8 @@ async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
   });
 
   if (item?.sucesso === "1" && item.dados?.length > 0) {
-    const d = item.dados[0];
-    return {
-      situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
-      nome: d.nome ?? "",
-      idResponsavel: d.id_responsavel ?? "",
-      idOrdemAtendimento: d.id_ordem_atendimento ?? "",
-      operacao: d.operacao ?? "",
-      usuarioStatus: d.usuario_status ?? "",
-      motivoFechamento: d.motivo_fechamento ?? d.id_motivo_fechamento ?? "",
-    };
+    const best = pickBestOrder(item.dados);
+    return best ? toCrmStatus(best) : null;
   }
   return null;
 }
