@@ -20,9 +20,9 @@ import LeadsCRM from "./LeadsCRM";
 
 const DATE_PRESETS = [
   { label: "Ontem", days: -1 },
-  { label: "7 dias", days: 7 },
-  { label: "14 dias", days: 14 },
-  { label: "30 dias", days: 30 },
+  { label: "7d", days: 7 },
+  { label: "14d", days: 14 },
+  { label: "30d", days: 30 },
   { label: "Total", days: null as number | null },
 ];
 
@@ -87,108 +87,110 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header — mobile compact */}
       <header className="gradient-header text-white sticky top-0 z-50 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
               <img
                 src="https://www.friasneto.com.br/imo_arq/empresa_logo/logo-site-imobiliaria.png"
                 alt="Frias Neto"
-                className="h-8 object-contain brightness-0 invert"
+                className="h-6 sm:h-8 object-contain brightness-0 invert"
               />
-              <div className="w-px h-8 bg-white/30" />
+              <div className="w-px h-6 sm:h-8 bg-white/30" />
               <img
                 src="https://atletico.com.br/wp-content/uploads/2019/10/Logo-Gradiente.png"
                 alt="MRV"
-                className="h-8 object-contain brightness-0 invert"
+                className="h-6 sm:h-8 object-contain brightness-0 invert"
               />
             </div>
-            <div className="text-right">
-              <h1 className="text-lg font-bold tracking-tight">Dashboard Meta Ads</h1>
-              <p className="text-xs text-white/70">Campanha Piazza di Viena</p>
+            <div className="text-right min-w-0">
+              <h1 className="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Meta Ads</h1>
+              <p className="text-[10px] sm:text-xs text-white/70 truncate">Piazza di Viena</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Loading / Error */}
         {loading && (
           <div className="text-center py-12">
             <div className="inline-block w-8 h-8 border-4 border-brand-blue-700 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-500 mt-3 text-sm">Carregando dados do Google Sheets...</p>
+            <p className="text-gray-500 mt-3 text-sm">Carregando dados...</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
-            {error}
-          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{error}</div>
         )}
 
         {!loading && !error && (
           <>
             {/* Updated at */}
             {updatedAt && (
-              <p className="text-[11px] text-gray-400">
-                Dados atualizados em: {new Date(updatedAt).toLocaleString("pt-BR")}
+              <p className="text-[10px] sm:text-[11px] text-gray-400">
+                Atualizado: {new Date(updatedAt).toLocaleString("pt-BR")}
               </p>
             )}
 
-            {/* Date Filters */}
-            <div className="flex flex-wrap items-center gap-2">
-              {DATE_PRESETS.map((f) => (
+            {/* Date Filters — scrollable on mobile */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+                {DATE_PRESETS.map((f) => (
+                  <button
+                    key={f.label}
+                    onClick={() => handlePreset(f.days)}
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+                      isPresetActive && filters.daysBack === f.days
+                        ? "bg-brand-blue-700 text-white shadow-md"
+                        : "bg-white text-brand-blue-700 border border-brand-blue-200"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+                <div className="w-px h-6 bg-gray-300 shrink-0" />
                 <button
-                  key={f.label}
-                  onClick={() => handlePreset(f.days)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isPresetActive && filters.daysBack === f.days
-                      ? "bg-brand-blue-700 text-white shadow-md"
-                      : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
+                  onClick={handleCustomToggle}
+                  className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+                    showCustomDate
+                      ? "bg-brand-orange-500 text-white shadow-md"
+                      : "bg-white text-brand-blue-700 border border-brand-blue-200"
                   }`}
                 >
-                  {f.label}
+                  Custom
                 </button>
-              ))}
-
-              <div className="w-px h-8 bg-gray-300 mx-1" />
-
-              <button
-                onClick={handleCustomToggle}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  showCustomDate
-                    ? "bg-brand-orange-500 text-white shadow-md"
-                    : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
-                }`}
-              >
-                Personalizado
-              </button>
+              </div>
 
               {showCustomDate && (
-                <div className="flex items-center gap-2 bg-white border border-brand-orange-300 rounded-lg px-3 py-1.5 shadow-sm">
-                  <label className="text-xs text-gray-500">De:</label>
-                  <input
-                    type="date"
-                    value={filters.customStart ?? ""}
-                    onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, customStart: e.target.value || null, daysBack: null }))
-                    }
-                    className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
-                  />
-                  <label className="text-xs text-gray-500">Ate:</label>
-                  <input
-                    type="date"
-                    value={filters.customEnd ?? ""}
-                    onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, customEnd: e.target.value || null, daysBack: null }))
-                    }
-                    className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
-                  />
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-white border border-brand-orange-300 rounded-lg px-3 py-2 shadow-sm">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <label className="text-xs text-gray-500 shrink-0">De:</label>
+                    <input
+                      type="date"
+                      value={filters.customStart ?? ""}
+                      onChange={(e) =>
+                        setFilters((prev) => ({ ...prev, customStart: e.target.value || null, daysBack: null }))
+                      }
+                      className="text-sm border-none outline-none bg-transparent text-brand-blue-900 w-full"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <label className="text-xs text-gray-500 shrink-0">Ate:</label>
+                    <input
+                      type="date"
+                      value={filters.customEnd ?? ""}
+                      onChange={(e) =>
+                        setFilters((prev) => ({ ...prev, customEnd: e.target.value || null, daysBack: null }))
+                      }
+                      className="text-sm border-none outline-none bg-transparent text-brand-blue-900 w-full"
+                    />
+                  </div>
                   {(filters.customStart || filters.customEnd) && (
                     <button
                       onClick={() => setFilters((prev) => ({ ...prev, customStart: null, customEnd: null }))}
-                      className="text-xs text-red-500 hover:text-red-700 ml-1"
+                      className="text-xs text-red-500"
                     >
                       Limpar
                     </button>
@@ -198,16 +200,10 @@ export default function Dashboard() {
             </div>
 
             {/* Campaign / AdSet / Ad Filters */}
-            <FilterBar
-              campaigns={campaigns}
-              adSets={adSets}
-              adNames={adNames}
-              filters={filters}
-              onChange={setFilters}
-            />
+            <FilterBar campaigns={campaigns} adSets={adSets} adNames={adNames} filters={filters} onChange={setFilters} />
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {/* KPI Cards — 2 cols mobile, 5 cols desktop */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
               <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma estimada" />
               <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
@@ -216,23 +212,25 @@ export default function Dashboard() {
             </div>
 
             {/* Secondary KPIs */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
               <MetricCard title="CPM" value={formatBRL(metrics.avgCPM)} icon="chart" color="light" small />
               <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
               <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
               <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
-              <MetricCard title="Frequencia" value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
+              <MetricCard title="Freq." value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
             </div>
 
             {/* Chart */}
-            <div className="bg-white rounded-xl card-shadow p-6">
-              <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Desempenho Diario</h2>
-              <DailyChart data={dailyData} />
+            <div className="bg-white rounded-xl card-shadow p-3 sm:p-6">
+              <h2 className="text-base sm:text-lg font-bold text-brand-blue-900 mb-3 sm:mb-4">Desempenho Diario</h2>
+              <div className="h-[250px] sm:h-[350px]">
+                <DailyChart data={dailyData} />
+              </div>
             </div>
 
             {/* Ad Performance Cards */}
             <div>
-              <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Comparativo por Anuncio</h2>
+              <h2 className="text-base sm:text-lg font-bold text-brand-blue-900 mb-3 sm:mb-4">Comparativo por Anuncio</h2>
               <AdPerformanceCards data={adData} />
             </div>
 
@@ -243,8 +241,8 @@ export default function Dashboard() {
       </main>
 
       {/* Footer */}
-      <footer className="gradient-header text-white/60 text-center py-4 text-xs mt-8">
-        Frias Neto Consultoria de Imoveis &bull; MRV &bull; Campanha Meta Ads 2026
+      <footer className="gradient-header text-white/60 text-center py-3 sm:py-4 text-[10px] sm:text-xs mt-6 sm:mt-8">
+        Frias Neto &bull; MRV &bull; Meta Ads 2026
       </footer>
     </div>
   );

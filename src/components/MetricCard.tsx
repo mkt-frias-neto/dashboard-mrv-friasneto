@@ -32,16 +32,16 @@ const iconMap: Record<string, string> = {
 
 export default function MetricCard({ title, value, icon, color, small, subtitle }: MetricCardProps) {
   return (
-    <div className={`rounded-xl border-l-4 card-shadow p-4 transition-all hover:scale-[1.02] ${colorMap[color]}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className={small ? "text-base" : "text-lg"}>{iconMap[icon] ?? icon}</span>
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</span>
+    <div className={`rounded-xl border-l-4 card-shadow p-3 sm:p-4 transition-all ${colorMap[color]}`}>
+      <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
+        <span className={small ? "text-sm sm:text-base" : "text-base sm:text-lg"}>{iconMap[icon] ?? icon}</span>
+        <span className="text-[9px] sm:text-xs font-medium text-gray-500 uppercase tracking-wide truncate">{title}</span>
       </div>
-      <p className={`font-bold text-brand-blue-900 ${small ? "text-lg" : "text-xl sm:text-2xl"}`}>
+      <p className={`font-bold text-brand-blue-900 truncate ${small ? "text-sm sm:text-lg" : "text-lg sm:text-2xl"}`}>
         {value}
       </p>
       {subtitle && (
-        <p className="text-[10px] text-gray-400 mt-0.5">{subtitle}</p>
+        <p className="text-[9px] sm:text-[10px] text-gray-400 mt-0.5">{subtitle}</p>
       )}
     </div>
   );
