@@ -120,11 +120,13 @@ export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow
       const yStr = toDateStr(yesterday);
       result = result.filter((r) => r.day === yStr);
     } else {
-      // Last N days (including today)
-      const startDate = new Date(today);
-      startDate.setDate(today.getDate() - filters.daysBack + 1);
+      // Last N days (excluding today, same as Meta Ads)
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const startDate = new Date(yesterday);
+      startDate.setDate(yesterday.getDate() - filters.daysBack + 1);
       const startStr = toDateStr(startDate);
-      const endStr = toDateStr(today);
+      const endStr = toDateStr(yesterday);
       result = result.filter((r) => r.day >= startStr && r.day <= endStr);
     }
   }
