@@ -178,44 +178,67 @@ function toCrmStatus(d: any): CrmStatus {
   };
 }
 
-// Two-pass query: first ABERTA only, then ALL if no open found
-async function queryKsi(
+// Query KSI by a single param, returns all dados found
+async function fetchKsiOrders(
   searchParam: string,
-  searchValue: string
-): Promise<CrmStatus | null> {
-  // Pass 1: only open orders (most likely the current campaign lead)
-  const openItem = await ksiFetch({
+  searchValue: string,
+  onlyOpen: boolean
+): Promise<any[]> {
+  const item = await ksiFetch({
     ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
     [searchParam]: searchValue,
-    oa_flag_aberta: "1",
+    oa_flag_aberta: onlyOpen ? "1" : "0",
   });
+  if (item?.sucesso === "1" && item.dados?.length > 0) {
+    return item.dados;
+  }
+  return [];
+}
 
-  if (openItem?.sucesso === "1" && openItem.dados?.length > 0) {
-    const best = pickBestOrder(openItem.dados);
+// Combined query: search by email AND phone, merge all results, pick the best
+async function queryKsiCombined(
+  email: string,
+  phone: string
+): Promise<CrmStatus | null> {
+  // Step 1: search ABERTA by email and phone in parallel
+  const [openByEmail, openByPhone] = await Promise.all([
+    email ? fetchKsiOrders("oa_email", email, true) : Promise.resolve([]),
+    phone ? fetchKsiOrders("oa_telefone", phone, true) : Promise.resolve([]),
+  ]);
+
+  // Merge and deduplicate by order ID
+  const openAll = deduplicateOrders([...openByEmail, ...openByPhone]);
+
+  if (openAll.length > 0) {
+    const best = pickBestOrder(openAll);
     if (best) return toCrmStatus(best);
   }
 
-  // Pass 2: all orders (open + closed) — pick most recent
-  const allItem = await ksiFetch({
-    ws_destino: "ORDEM_ATENDIMENTO_RESPONSAVEIS",
-    [searchParam]: searchValue,
-    oa_flag_aberta: "0",
-  });
+  // Step 2: no open orders found — search ALL by email and phone
+  const [allByEmail, allByPhone] = await Promise.all([
+    email ? fetchKsiOrders("oa_email", email, false) : Promise.resolve([]),
+    phone ? fetchKsiOrders("oa_telefone", phone, false) : Promise.resolve([]),
+  ]);
 
-  if (allItem?.sucesso === "1" && allItem.dados?.length > 0) {
-    const best = pickBestOrder(allItem.dados);
+  const allOrders = deduplicateOrders([...allByEmail, ...allByPhone]);
+
+  if (allOrders.length > 0) {
+    const best = pickBestOrder(allOrders);
     if (best) return toCrmStatus(best);
   }
 
   return null;
 }
 
-async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
-  return queryKsi("oa_email", email);
-}
-
-async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
-  return queryKsi("oa_telefone", phone);
+// Remove duplicate orders by id_ordem_atendimento
+function deduplicateOrders(orders: any[]): any[] {
+  const seen = new Set<string>();
+  return orders.filter((o) => {
+    const id = o.id_ordem_atendimento ?? "";
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 // ---------- Main Handler ----------
@@ -273,10 +296,8 @@ export async function GET() {
       const batch = leads.slice(i, i + batchSize);
       const results = await Promise.all(
         batch.map(async (lead) => {
-          let crm = await queryKsiByEmail(lead.email);
-          if (!crm && lead.phoneFormatted) {
-            crm = await queryKsiByPhone(lead.phoneFormatted);
-          }
+          // Search by email AND phone combined, pick best match
+          const crm = await queryKsiCombined(lead.email, lead.phoneFormatted);
           // Resolve motivo name if we have an ID
           let motivoNome = "";
           if (crm?.motivoFechamento) {
