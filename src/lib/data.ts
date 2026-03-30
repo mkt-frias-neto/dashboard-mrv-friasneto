@@ -70,7 +70,6 @@ export function getCampaignData(): CampaignRow[] {
   return rawData;
 }
 
-// --- Unique filter values ---
 export function getUniqueCampaigns(rows: CampaignRow[]): string[] {
   return Array.from(new Set(rows.map((r) => r.campaignName)));
 }
@@ -84,6 +83,8 @@ export function getUniqueAdNames(rows: CampaignRow[]): string[] {
 // --- Filters ---
 export interface Filters {
   daysBack: number | null;
+  customStart: string | null; // "YYYY-MM-DD"
+  customEnd: string | null;   // "YYYY-MM-DD"
   campaign: string | null;
   adSet: string | null;
   adName: string | null;
@@ -92,14 +93,21 @@ export interface Filters {
 export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow[] {
   let result = rows;
 
-  if (filters.daysBack !== null) {
+  // Custom date range takes priority over preset
+  if (filters.customStart || filters.customEnd) {
+    result = result.filter((r) => {
+      const d = r.day;
+      if (filters.customStart && d < filters.customStart) return false;
+      if (filters.customEnd && d > filters.customEnd) return false;
+      return true;
+    });
+  } else if (filters.daysBack !== null) {
     const today = new Date("2026-03-30");
     const startDate = new Date(today);
     startDate.setDate(today.getDate() - filters.daysBack + 1);
-    result = result.filter((r) => {
-      const d = new Date(r.day);
-      return d >= startDate && d <= today;
-    });
+    const startStr = startDate.toISOString().split("T")[0];
+    const endStr = today.toISOString().split("T")[0];
+    result = result.filter((r) => r.day >= startStr && r.day <= endStr);
   }
 
   if (filters.campaign) {
@@ -210,26 +218,3 @@ export function aggregateByAd(rows: CampaignRow[]): AdAggregate[] {
   }
   return Object.values(map);
 }
-
-// --- Ad Previews with Facebook Embed ---
-export interface AdPreview {
-  adName: string;
-  type: "image" | "video";
-  facebookPostUrl: string;
-  description: string;
-}
-
-export const adPreviews: AdPreview[] = [
-  {
-    adName: "Arte MRV",
-    type: "image",
-    facebookPostUrl: "https://www.facebook.com/100064523509127/posts/1379497087544395/",
-    description: "Arte estatica do empreendimento Piazza di Viena",
-  },
-  {
-    adName: "Vídeos MRV",
-    type: "video",
-    facebookPostUrl: "https://www.facebook.com/100064523509127/posts/1379494027544701/",
-    description: "Video promocional do empreendimento Piazza di Viena",
-  },
-];

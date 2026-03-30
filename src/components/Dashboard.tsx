@@ -10,16 +10,14 @@ import {
   getUniqueCampaigns,
   getUniqueAdSets,
   getUniqueAdNames,
-  adPreviews,
   type Filters,
 } from "@/lib/data";
 import MetricCard from "./MetricCard";
 import DailyChart from "./DailyChart";
 import AdPerformanceCards from "./AdPerformanceCards";
-import AdPreviewSection from "./AdPreviewSection";
 import FilterBar from "./FilterBar";
 
-const DATE_FILTERS = [
+const DATE_PRESETS = [
   { label: "Ontem", days: 1 },
   { label: "7 dias", days: 7 },
   { label: "14 dias", days: 14 },
@@ -30,10 +28,13 @@ const DATE_FILTERS = [
 export default function Dashboard() {
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
+    customStart: null,
+    customEnd: null,
     campaign: null,
     adSet: null,
     adName: null,
   });
+  const [showCustomDate, setShowCustomDate] = useState(false);
 
   const allData = getCampaignData();
   const campaigns = getUniqueCampaigns(allData);
@@ -44,6 +45,18 @@ export default function Dashboard() {
   const metrics = useMemo(() => aggregateMetrics(filtered), [filtered]);
   const dailyData = useMemo(() => aggregateByDay(filtered), [filtered]);
   const adData = useMemo(() => aggregateByAd(filtered), [filtered]);
+
+  const isPresetActive = !showCustomDate && filters.customStart === null && filters.customEnd === null;
+
+  const handlePreset = (days: number | null) => {
+    setShowCustomDate(false);
+    setFilters((prev) => ({ ...prev, daysBack: days, customStart: null, customEnd: null }));
+  };
+
+  const handleCustomToggle = () => {
+    setShowCustomDate(true);
+    setFilters((prev) => ({ ...prev, daysBack: null, customStart: null, customEnd: null }));
+  };
 
   const formatBRL = (n: number) =>
     n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -81,13 +94,13 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* Date Filters */}
-        <div className="flex flex-wrap gap-2">
-          {DATE_FILTERS.map((f) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {DATE_PRESETS.map((f) => (
             <button
               key={f.label}
-              onClick={() => setFilters((prev) => ({ ...prev, daysBack: f.days }))}
+              onClick={() => handlePreset(f.days)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                filters.daysBack === f.days
+                isPresetActive && filters.daysBack === f.days
                   ? "bg-brand-blue-700 text-white shadow-md"
                   : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
               }`}
@@ -95,6 +108,50 @@ export default function Dashboard() {
               {f.label}
             </button>
           ))}
+
+          <div className="w-px h-8 bg-gray-300 mx-1" />
+
+          <button
+            onClick={handleCustomToggle}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              showCustomDate
+                ? "bg-brand-orange-500 text-white shadow-md"
+                : "bg-white text-brand-blue-700 border border-brand-blue-200 hover:bg-brand-blue-50"
+            }`}
+          >
+            Personalizado
+          </button>
+
+          {showCustomDate && (
+            <div className="flex items-center gap-2 bg-white border border-brand-orange-300 rounded-lg px-3 py-1.5 shadow-sm">
+              <label className="text-xs text-gray-500">De:</label>
+              <input
+                type="date"
+                value={filters.customStart ?? ""}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, customStart: e.target.value || null, daysBack: null }))
+                }
+                className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
+              />
+              <label className="text-xs text-gray-500">Ate:</label>
+              <input
+                type="date"
+                value={filters.customEnd ?? ""}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, customEnd: e.target.value || null, daysBack: null }))
+                }
+                className="text-sm border-none outline-none bg-transparent text-brand-blue-900 cursor-pointer"
+              />
+              {(filters.customStart || filters.customEnd) && (
+                <button
+                  onClick={() => setFilters((prev) => ({ ...prev, customStart: null, customEnd: null }))}
+                  className="text-xs text-red-500 hover:text-red-700 ml-1"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Campaign / AdSet / Ad Filters */}
@@ -130,16 +187,10 @@ export default function Dashboard() {
           <DailyChart data={dailyData} />
         </div>
 
-        {/* Ad Performance Cards (replaces old detail table) */}
+        {/* Ad Performance Cards */}
         <div>
           <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Comparativo por Anuncio</h2>
           <AdPerformanceCards data={adData} />
-        </div>
-
-        {/* Ad Previews */}
-        <div className="bg-white rounded-xl card-shadow p-6">
-          <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Pre-visualizacao dos Anuncios</h2>
-          <AdPreviewSection previews={adPreviews} adData={adData} />
         </div>
       </main>
 
