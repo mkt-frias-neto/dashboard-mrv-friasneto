@@ -16,6 +16,7 @@ import MetricCard from "./MetricCard";
 import DailyChart from "./DailyChart";
 import AdPerformanceCards from "./AdPerformanceCards";
 import FilterBar from "./FilterBar";
+import LeadsCRM from "./LeadsCRM";
 
 const DATE_PRESETS = [
   { label: "Ontem", days: -1 },
@@ -234,6 +235,9 @@ export default function Dashboard() {
               <h2 className="text-lg font-bold text-brand-blue-900 mb-4">Comparativo por Anuncio</h2>
               <AdPerformanceCards data={adData} />
             </div>
+
+            {/* CRM Integration */}
+            <LeadsCRM />
           </>
         )}
       </main>

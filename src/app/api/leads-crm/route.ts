@@ -1,0 +1,225 @@
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const LEADS_SHEET_ID = "1SbIcGGizozINPj9RLU1t359DbOY0YO5goVJcBO3xk5Q";
+const LEADS_CSV_URL = `https://docs.google.com/spreadsheets/d/${LEADS_SHEET_ID}/export?format=csv`;
+
+const KSI_BASE = "https://www.friasneto.com.br/kurole_include/api/webservice/escopos/";
+const KSI_SCOPE_ID = "68";
+const KSI_TOKEN = "252c72ea3daa906ce07f3619c5eca804";
+
+// Parse CSV line respecting quotes
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      fields.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
+// Format phone from "p:+5519981829838" to "(19) 98182-9838"
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  // Remove country code 55
+  const local = digits.startsWith("55") ? digits.slice(2) : digits;
+  if (local.length === 11) {
+    return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  }
+  if (local.length === 10) {
+    return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  }
+  return raw;
+}
+
+// Clean email
+function cleanEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+interface LeadRow {
+  id: string;
+  createdTime: string;
+  adName: string;
+  adSetName: string;
+  campaignName: string;
+  formName: string;
+  platform: string;
+  whatsapp: string;
+  firstName: string;
+  email: string;
+  phoneRaw: string;
+  phoneFormatted: string;
+  idKsi: string;
+  leadStatus: string;
+}
+
+interface CrmStatus {
+  situacao: string;
+  nome: string;
+  idResponsavel: string;
+  idOrdemAtendimento: string;
+  operacao: string;
+  usuarioStatus: string;
+}
+
+async function queryKsiByEmail(email: string): Promise<CrmStatus | null> {
+  try {
+    const url = new URL(KSI_BASE);
+    url.searchParams.set("id", KSI_SCOPE_ID);
+    url.searchParams.set("ws_destino", "ORDEM_ATENDIMENTO_RESPONSAVEIS");
+    url.searchParams.set("oa_email", email);
+    url.searchParams.set("oa_flag_aberta", "0");
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${KSI_TOKEN}` },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const item = Array.isArray(json) ? json[0] : json;
+
+    if (item?.sucesso === "1" && item.dados?.length > 0) {
+      const d = item.dados[0];
+      return {
+        situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
+        nome: d.nome ?? "",
+        idResponsavel: d.id_responsavel ?? "",
+        idOrdemAtendimento: d.id_ordem_atendimento ?? "",
+        operacao: d.operacao ?? "",
+        usuarioStatus: d.usuario_status ?? "",
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function queryKsiByPhone(phone: string): Promise<CrmStatus | null> {
+  try {
+    const url = new URL(KSI_BASE);
+    url.searchParams.set("id", KSI_SCOPE_ID);
+    url.searchParams.set("ws_destino", "ORDEM_ATENDIMENTO_RESPONSAVEIS");
+    url.searchParams.set("oa_telefone", phone);
+    url.searchParams.set("oa_flag_aberta", "0");
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${KSI_TOKEN}` },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const item = Array.isArray(json) ? json[0] : json;
+
+    if (item?.sucesso === "1" && item.dados?.length > 0) {
+      const d = item.dados[0];
+      return {
+        situacao: d.situcao ?? d.situacao ?? "DESCONHECIDO",
+        nome: d.nome ?? "",
+        idResponsavel: d.id_responsavel ?? "",
+        idOrdemAtendimento: d.id_ordem_atendimento ?? "",
+        operacao: d.operacao ?? "",
+        usuarioStatus: d.usuario_status ?? "",
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET() {
+  try {
+    // 1. Fetch leads from Google Sheets
+    const csvRes = await fetch(LEADS_CSV_URL, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!csvRes.ok) {
+      return NextResponse.json({ error: "Failed to fetch leads sheet" }, { status: 502 });
+    }
+
+    const text = await csvRes.text();
+    const lines = text.split("\n").filter((l) => l.trim() !== "");
+    if (lines.length < 2) {
+      return NextResponse.json({ leads: [], summary: {} });
+    }
+
+    // Parse header
+    const headers = parseCsvLine(lines[0]);
+    const colIndex = (name: string) => headers.findIndex((h) => h === name);
+
+    // Parse rows
+    const leads: LeadRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      leads.push({
+        id: cols[colIndex("id")] ?? "",
+        createdTime: cols[colIndex("created_time")] ?? "",
+        adName: cols[colIndex("ad_name")] ?? "",
+        adSetName: cols[colIndex("adset_name")] ?? "",
+        campaignName: cols[colIndex("campaign_name")] ?? "",
+        formName: cols[colIndex("form_name")] ?? "",
+        platform: cols[colIndex("platform")] ?? "",
+        whatsapp: cols[colIndex("qual_o_seu_whatsapp?")] ?? "",
+        firstName: cols[colIndex("first_name")] ?? "",
+        email: cleanEmail(cols[colIndex("email")] ?? ""),
+        phoneRaw: cols[colIndex("phone_number")] ?? "",
+        phoneFormatted: formatPhone(cols[colIndex("phone_number")] ?? ""),
+        idKsi: cols[colIndex("id_ksi")] ?? "",
+        leadStatus: cols[colIndex("lead_status")] ?? "",
+      });
+    }
+
+    // 2. Query KSI for each lead (parallel with concurrency limit)
+    const enriched: Array<LeadRow & { crm: CrmStatus | null }> = [];
+
+    // Process in batches of 3 to avoid overwhelming the KSI API
+    const batchSize = 3;
+    for (let i = 0; i < leads.length; i += batchSize) {
+      const batch = leads.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (lead) => {
+          // Try email first, then phone
+          let crm = await queryKsiByEmail(lead.email);
+          if (!crm && lead.phoneFormatted) {
+            crm = await queryKsiByPhone(lead.phoneFormatted);
+          }
+          return { ...lead, crm };
+        })
+      );
+      enriched.push(...results);
+    }
+
+    // 3. Build summary
+    const total = enriched.length;
+    const withCrm = enriched.filter((l) => l.crm !== null).length;
+    const aberta = enriched.filter((l) => l.crm?.situacao === "ABERTA").length;
+    const fechada = enriched.filter((l) => l.crm?.situacao === "FECHADA").length;
+    const semCrm = enriched.filter((l) => l.crm === null).length;
+
+    return NextResponse.json({
+      leads: enriched,
+      summary: { total, withCrm, aberta, fechada, semCrm },
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? "Unknown error" }, { status: 500 });
+  }
+}
