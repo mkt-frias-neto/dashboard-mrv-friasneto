@@ -106,6 +106,7 @@ async function ksiFetch(params: Record<string, string>): Promise<any> {
       url.searchParams.set(k, v);
     }
     const res = await fetch(url.toString(), {
+      cache: "no-store",
       headers: { Authorization: `Bearer ${KSI_TOKEN}` },
       signal: AbortSignal.timeout(8000),
     });
@@ -250,7 +251,7 @@ export async function GET() {
 
     // 1. Fetch leads + closure reasons in parallel
     const [csvRes, closureReasons] = await Promise.all([
-      fetch(LEADS_CSV_URL, { headers: { "User-Agent": "Mozilla/5.0" } }),
+      fetch(LEADS_CSV_URL, { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } }),
       getClosureReasons(),
     ]);
 

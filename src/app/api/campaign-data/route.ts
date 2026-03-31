@@ -14,7 +14,7 @@ function parseNum(val: string): number {
 export async function GET() {
   try {
     const res = await fetch(CSV_URL, {
-      next: { revalidate: 1800 }, // cache 30 min
+      cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0" },
     });
 
