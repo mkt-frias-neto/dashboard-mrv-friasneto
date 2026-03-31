@@ -69,6 +69,17 @@ export async function GET() {
       };
     });
 
+    // Fix: Meta reports 2 leads on 03/28 but correct value is 4.
+    // Apply +2 correction to Arte MRV on 2026-03-28 only.
+    for (const row of rows) {
+      if (row.day === "2026-03-28" && row.adName === "Arte MRV") {
+        row.leads = Math.max(row.leads, 4);
+        if (row.leads > 0 && row.amountSpent > 0) {
+          row.costPerLead = row.amountSpent / row.leads;
+        }
+      }
+    }
+
     return NextResponse.json(
       { data: rows, updatedAt: new Date().toISOString() },
       {
