@@ -159,7 +159,7 @@ export default function Dashboard() {
                       : "bg-white text-brand-blue-700 border border-brand-blue-200"
                   }`}
                 >
-                  Custom
+                  Personalizado
                 </button>
               </div>
 
