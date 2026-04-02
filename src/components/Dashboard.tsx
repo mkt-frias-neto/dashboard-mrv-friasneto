@@ -78,6 +78,9 @@ export default function Dashboard() {
   const reachSubtitle = isTotal && noSubFilters && realTotalReach
     ? "Usuarios unicos"
     : "Soma diaria";
+  const displayFrequency = isTotal && noSubFilters && realTotalReach
+    ? metrics.totalImpressions / realTotalReach
+    : metrics.avgFrequency;
 
   const isPresetActive = !showCustomDate && filters.customStart === null && filters.customEnd === null;
 
@@ -230,7 +233,7 @@ export default function Dashboard() {
               <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
               <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
               <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
-              <MetricCard title="Freq." value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
+              <MetricCard title="Freq." value={formatDec(displayFrequency)} icon="refresh" color="light" small />
               <MetricCard title="Views Video" value={formatNum(metrics.totalVideoViews)} icon="play" color="light" small />
             </div>
 
