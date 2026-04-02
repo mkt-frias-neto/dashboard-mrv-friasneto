@@ -3,16 +3,13 @@ import { NextResponse } from "next/server";
 // Cache for 4 hours — refreshed by GitHub Actions deploy at 7h, 11h, 13h, 17h
 export const revalidate = 14400;
 
-const CAMPAIGN_SHEET_ID = "1OxCJuvQ4SXjteAAn3lS8JE4BAn12mg0X-DvX1o7hUi8";
-const CAMPAIGN_CSV_URL = `https://docs.google.com/spreadsheets/d/${CAMPAIGN_SHEET_ID}/export?format=csv`;
+const SHEET_ID = "1Sxtnbol0IO_RghkhhJyDS831C448PObzbDW7N3VxHlc";
+const ANUNCIOS_GID = "387511299";
+const ANUNCIOS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${ANUNCIOS_GID}`;
 
+// Real leads sheet for accurate lead counts
 const LEADS_SHEET_ID = "1SbIcGGizozINPj9RLU1t359DbOY0YO5goVJcBO3xk5Q";
 const LEADS_CSV_URL = `https://docs.google.com/spreadsheets/d/${LEADS_SHEET_ID}/export?format=csv`;
-
-function parseNum(val: string): number {
-  if (!val || val.trim() === "") return 0;
-  return parseFloat(val.replace(/\./g, "").replace(",", "."));
-}
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -31,6 +28,16 @@ function parseCsvLine(line: string): string[] {
   }
   fields.push(current.trim());
   return fields;
+}
+
+// Parse Brazilian number: "3.890" → 3890, "R$ 46,96" → 46.96, "0,41%" → 0.41
+function parseNum(val: string): number {
+  if (!val || val.trim() === "" || val === "-") return 0;
+  const cleaned = val.replace(/^R\$\s*/, "").replace(/%$/, "").trim();
+  // Brazilian: dots are thousands, comma is decimal
+  const normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(normalized);
+  return isNaN(n) ? 0 : n;
 }
 
 // Count leads per day+ad from the real leads spreadsheet
@@ -57,7 +64,6 @@ async function fetchLeadCounts(): Promise<Record<string, number>> {
       const cols = parseCsvLine(lines[i]);
       const adName = cols[adNameIdx] ?? "";
       const createdTime = cols[createdIdx] ?? "";
-      // Extract date (YYYY-MM-DD) from created_time, using local BRT time
       const dateMatch = createdTime.match(/^(\d{4}-\d{2}-\d{2})/);
       if (!dateMatch || !adName) continue;
       const day = dateMatch[1];
@@ -72,60 +78,78 @@ async function fetchLeadCounts(): Promise<Record<string, number>> {
 
 export async function GET() {
   try {
-    // Fetch campaign metrics and real lead counts in parallel
-    const [campaignRes, leadCounts] = await Promise.all([
-      fetch(CAMPAIGN_CSV_URL, {
+    const [csvRes, leadCounts] = await Promise.all([
+      fetch(ANUNCIOS_URL, {
         cache: "no-store",
         headers: { "User-Agent": "Mozilla/5.0" },
       }),
       fetchLeadCounts(),
     ]);
 
-    if (!campaignRes.ok) {
+    if (!csvRes.ok) {
       return NextResponse.json(
-        { error: "Failed to fetch spreadsheet", status: campaignRes.status },
+        { error: "Failed to fetch spreadsheet", status: csvRes.status },
         { status: 502 }
       );
     }
 
-    const text = await campaignRes.text();
+    const text = await csvRes.text();
     const lines = text.split("\n").filter((l) => l.trim() !== "");
 
     if (lines.length < 2) {
       return NextResponse.json({ data: [] });
     }
 
+    const headers = parseCsvLine(lines[0]);
+    const col = (name: string) => headers.indexOf(name);
+
     const hasLeadData = Object.keys(leadCounts).length > 0;
 
-    // Skip header row
-    const rows = lines.slice(1).map((line) => {
-      const fields = parseCsvLine(line);
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const f = parseCsvLine(lines[i]);
 
-      const adName = fields[13] ?? "";
-      const day = (fields[14] ?? "").replace(/\r/g, "");
+      const campaignName = f[col("Campanha")] ?? "";
+      const adSetName = f[col("Conjunto")] ?? "";
+      const adName = f[col("Anúncio")] ?? "";
+      const day = (f[col("Data Início")] ?? "").replace(/\r/g, "");
+      const amountSpent = parseNum(f[col("Investimento (R$)")] ?? "");
+      const impressions = parseNum(f[col("Impressões")] ?? "");
+      const reach = parseNum(f[col("Alcance")] ?? "");
+      const frequency = parseNum(f[col("Frequência")] ?? "");
+      const linkClicks = parseNum(f[col("Cliques")] ?? "");
+      const ctr = parseNum(f[col("CTR (%)")] ?? "");
+      const cpc = parseNum(f[col("CPC (R$)")] ?? "");
+      const cpm = parseNum(f[col("CPM (R$)")] ?? "");
+      const videoViews = parseNum(f[col("Views Vídeo")] ?? "");
+      const pageViews = parseNum(f[col("Views Página")] ?? "");
+      const messages = parseNum(f[col("Mensagens")] ?? "");
 
-      // Use real lead count from leads spreadsheet instead of campaign data
+      // Use real lead count from leads spreadsheet
       const leadKey = `${day}|${adName}`;
-      const realLeads = hasLeadData ? (leadCounts[leadKey] ?? 0) : parseNum(fields[9] ?? "");
-      const amountSpent = parseNum(fields[3] ?? "");
+      const leads = hasLeadData ? (leadCounts[leadKey] ?? 0) : parseNum(f[col("Resultados")] ?? "");
+      const costPerLead = leads > 0 ? amountSpent / leads : 0;
 
-      return {
-        reach: parseNum(fields[0] ?? ""),
-        impressions: parseNum(fields[1] ?? ""),
-        frequency: parseNum(fields[2] ?? ""),
-        amountSpent,
-        cpm: parseNum(fields[4] ?? ""),
-        linkClicks: parseNum(fields[5] ?? ""),
-        cpc: parseNum(fields[6] ?? ""),
-        ctr: parseNum(fields[7] ?? ""),
-        costPerLead: realLeads > 0 ? amountSpent / realLeads : 0,
-        leads: realLeads,
-        campaignName: fields[11] ?? "",
-        adSetName: fields[12] ?? "",
+      rows.push({
+        campaignName,
+        adSetName,
         adName,
         day,
-      };
-    });
+        amountSpent,
+        impressions,
+        reach,
+        frequency,
+        linkClicks,
+        ctr,
+        cpc,
+        cpm,
+        costPerLead,
+        leads,
+        videoViews,
+        pageViews,
+        messages,
+      });
+    }
 
     return NextResponse.json(
       { data: rows, updatedAt: new Date().toISOString() },

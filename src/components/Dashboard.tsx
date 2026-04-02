@@ -17,6 +17,7 @@ import DailyChart from "./DailyChart";
 import AdPerformanceCards from "./AdPerformanceCards";
 import FilterBar from "./FilterBar";
 import LeadsCRM from "./LeadsCRM";
+import DemographicsCharts from "./DemographicsCharts";
 
 const DATE_PRESETS = [
   { label: "Ontem", days: -1 },
@@ -205,19 +206,20 @@ export default function Dashboard() {
             {/* KPI Cards — 2 cols mobile, 5 cols desktop */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
-              <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma estimada" />
+              <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma diaria" />
               <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
               <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
               <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />
             </div>
 
             {/* Secondary KPIs */}
-            <div className="grid grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
               <MetricCard title="CPM" value={formatBRL(metrics.avgCPM)} icon="chart" color="light" small />
               <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
               <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
               <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
               <MetricCard title="Freq." value={formatDec(metrics.avgFrequency)} icon="refresh" color="light" small />
+              <MetricCard title="Views Video" value={formatNum(metrics.totalVideoViews)} icon="play" color="light" small />
             </div>
 
             {/* Chart */}
@@ -233,6 +235,9 @@ export default function Dashboard() {
               <h2 className="text-base sm:text-lg font-bold text-brand-blue-900 mb-3 sm:mb-4">Comparativo por Anuncio</h2>
               <AdPerformanceCards data={adData} />
             </div>
+
+            {/* Demographics */}
+            <DemographicsCharts />
 
             {/* CRM Integration */}
             <LeadsCRM />

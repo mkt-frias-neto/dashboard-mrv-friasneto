@@ -13,6 +13,9 @@ export interface CampaignRow {
   adSetName: string;
   adName: string;
   day: string;
+  videoViews: number;
+  pageViews: number;
+  messages: number;
 }
 
 // --- Unique filter values ---
@@ -92,6 +95,9 @@ export interface AggregatedMetrics {
   avgCTR: number;
   avgCostPerLead: number;
   totalLeads: number;
+  totalVideoViews: number;
+  totalPageViews: number;
+  totalMessages: number;
 }
 
 export function aggregateMetrics(rows: CampaignRow[]): AggregatedMetrics {
@@ -99,7 +105,8 @@ export function aggregateMetrics(rows: CampaignRow[]): AggregatedMetrics {
     return {
       totalReach: 0, totalImpressions: 0, avgFrequency: 0, totalSpent: 0,
       avgCPM: 0, totalClicks: 0, avgCPC: 0, avgCTR: 0,
-      avgCostPerLead: 0, totalLeads: 0,
+      avgCostPerLead: 0, totalLeads: 0, totalVideoViews: 0,
+      totalPageViews: 0, totalMessages: 0,
     };
   }
   const totalReach = rows.reduce((s, r) => s + r.reach, 0);
@@ -107,6 +114,9 @@ export function aggregateMetrics(rows: CampaignRow[]): AggregatedMetrics {
   const totalSpent = rows.reduce((s, r) => s + r.amountSpent, 0);
   const totalClicks = rows.reduce((s, r) => s + r.linkClicks, 0);
   const totalLeads = rows.reduce((s, r) => s + r.leads, 0);
+  const totalVideoViews = rows.reduce((s, r) => s + (r.videoViews ?? 0), 0);
+  const totalPageViews = rows.reduce((s, r) => s + (r.pageViews ?? 0), 0);
+  const totalMessages = rows.reduce((s, r) => s + (r.messages ?? 0), 0);
   return {
     totalReach, totalImpressions,
     avgFrequency: totalImpressions / (totalReach || 1),
@@ -117,6 +127,9 @@ export function aggregateMetrics(rows: CampaignRow[]): AggregatedMetrics {
     avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
     avgCostPerLead: totalLeads > 0 ? totalSpent / totalLeads : 0,
     totalLeads,
+    totalVideoViews,
+    totalPageViews,
+    totalMessages,
   };
 }
 

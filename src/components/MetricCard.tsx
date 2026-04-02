@@ -28,6 +28,7 @@ const iconMap: Record<string, string> = {
   trending: "📈",
   tag: "🏷",
   refresh: "🔄",
+  play: "▶️",
 };
 
 export default function MetricCard({ title, value, icon, color, small, subtitle }: MetricCardProps) {
