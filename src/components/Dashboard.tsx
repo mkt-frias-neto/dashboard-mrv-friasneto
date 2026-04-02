@@ -32,6 +32,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [realTotalReach, setRealTotalReach] = useState<number | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
@@ -50,6 +51,7 @@ export default function Dashboard() {
         if (json.data) {
           setAllData(json.data);
           setUpdatedAt(json.updatedAt ?? null);
+          if (json.totalReach) setRealTotalReach(json.totalReach);
         } else {
           setError(json.error ?? "Erro ao carregar dados");
         }
@@ -66,6 +68,16 @@ export default function Dashboard() {
   const metrics = useMemo(() => aggregateMetrics(filtered), [filtered]);
   const dailyData = useMemo(() => aggregateByDay(filtered), [filtered]);
   const adData = useMemo(() => aggregateByAd(filtered), [filtered]);
+
+  // Use real deduplicated reach when "Total" is selected with no other filters
+  const isTotal = filters.daysBack === null && !filters.customStart && !filters.customEnd;
+  const noSubFilters = !filters.campaign && !filters.adSet && !filters.adName;
+  const displayReach = isTotal && noSubFilters && realTotalReach
+    ? realTotalReach
+    : metrics.totalReach;
+  const reachSubtitle = isTotal && noSubFilters && realTotalReach
+    ? "Usuarios unicos"
+    : "Soma diaria";
 
   const isPresetActive = !showCustomDate && filters.customStart === null && filters.customEnd === null;
 
@@ -206,7 +218,7 @@ export default function Dashboard() {
             {/* KPI Cards — 2 cols mobile, 5 cols desktop */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
-              <MetricCard title="Alcance" value={formatNum(metrics.totalReach)} icon="users" color="blue" subtitle="Soma diaria" />
+              <MetricCard title="Alcance" value={formatNum(displayReach)} icon="users" color="blue" subtitle={reachSubtitle} />
               <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
               <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
               <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />

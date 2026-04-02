@@ -7,6 +7,10 @@ const SHEET_ID = "1Sxtnbol0IO_RghkhhJyDS831C448PObzbDW7N3VxHlc";
 const ANUNCIOS_GID = "387511299";
 const ANUNCIOS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${ANUNCIOS_GID}`;
 
+// Resumo (Camp) — has the real deduplicated reach for the full period
+const RESUMO_GID = "1413037998";
+const RESUMO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${RESUMO_GID}`;
+
 // Real leads sheet for accurate lead counts
 const LEADS_SHEET_ID = "1SbIcGGizozINPj9RLU1t359DbOY0YO5goVJcBO3xk5Q";
 const LEADS_CSV_URL = `https://docs.google.com/spreadsheets/d/${LEADS_SHEET_ID}/export?format=csv`;
@@ -76,14 +80,36 @@ async function fetchLeadCounts(): Promise<Record<string, number>> {
   }
 }
 
+// Fetch the real deduplicated reach from Resumo (Camp) sheet
+async function fetchTotalReach(): Promise<number | null> {
+  try {
+    const res = await fetch(RESUMO_URL, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.trim() !== "");
+    if (lines.length < 2) return null;
+    const headers = parseCsvLine(lines[0]);
+    const reachIdx = headers.indexOf("Alcance");
+    if (reachIdx === -1) return null;
+    const row = parseCsvLine(lines[1]);
+    return parseNum(row[reachIdx] ?? "");
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   try {
-    const [csvRes, leadCounts] = await Promise.all([
+    const [csvRes, leadCounts, totalReach] = await Promise.all([
       fetch(ANUNCIOS_URL, {
         cache: "no-store",
         headers: { "User-Agent": "Mozilla/5.0" },
       }),
       fetchLeadCounts(),
+      fetchTotalReach(),
     ]);
 
     if (!csvRes.ok) {
@@ -152,7 +178,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { data: rows, updatedAt: new Date().toISOString() },
+      { data: rows, totalReach, updatedAt: new Date().toISOString() },
       {
         headers: {
           "Cache-Control": "s-maxage=1800, stale-while-revalidate=3600",
