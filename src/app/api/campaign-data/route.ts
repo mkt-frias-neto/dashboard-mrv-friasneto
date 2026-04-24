@@ -127,8 +127,8 @@ async function fetchResumoMetrics(): Promise<ResumoData> {
       "CTR": "ctr",
       "CPM": "cpm",
       "CPC": "cpc",
-      "Leads (Total)": "leads",
-      "Custo/Lead": "costPerLead",
+      "Resultados": "leads",
+      "Custo/Resultado": "costPerLead",
       "Videoviews": "videoViews",
       "Conversas WhatsApp": "messages",
     };

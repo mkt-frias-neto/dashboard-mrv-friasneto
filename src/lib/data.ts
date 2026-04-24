@@ -65,9 +65,10 @@ export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow
       const yStr = toDateStr(yesterday);
       result = result.filter((r) => r.day === yStr);
     } else {
-      // Last N days — use latest date in data as end reference
-      // (Meta data typically goes up to yesterday, not today)
-      const latestDay = rows.reduce((max, r) => r.day > max ? r.day : max, "");
+      // Last N days — use latest date with meaningful data as end reference
+      // (skip partial/empty days like today with ~0 impressions)
+      const latestDay = rows.reduce((max, r) =>
+        r.day > max && r.impressions > 10 ? r.day : max, "");
       const endDate = latestDay
         ? new Date(latestDay + "T00:00:00")
         : today;

@@ -19,7 +19,7 @@ interface Props {
 export default function DailyChart({ data }: Props) {
   const chartData = data.map((d) => ({
     ...d,
-    day: new Date(d.day).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    day: new Date(d.day + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
   }));
 
   if (chartData.length === 0) {
