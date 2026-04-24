@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 // Cache for 4 hours — refreshed by GitHub Actions deploy at 7h, 11h, 13h, 17h
 export const revalidate = 14400;
 
-const SHEET_ID = "1Sxtnbol0IO_RghkhhJyDS831C448PObzbDW7N3VxHlc";
-const ANUNCIOS_GID = "387511299";
+const SHEET_ID = "1HrzuyyCeJhN4NH3aQAiv1vJDhaBa4sL2Gnh3TNw0Rh4";
+const ANUNCIOS_GID = "2048619975";
 const ANUNCIOS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${ANUNCIOS_GID}`;
 
-// Resumo (Camp) — has the real deduplicated reach for the full period
-const RESUMO_GID = "1413037998";
+// Resumo (Camp) — has real deduplicated reach for 7d, 14d, 30d periods
+const RESUMO_GID = "1969949138";
 const RESUMO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${RESUMO_GID}`;
 
 // Real leads sheet for accurate lead counts
@@ -80,36 +80,52 @@ async function fetchLeadCounts(): Promise<Record<string, number>> {
   }
 }
 
-// Fetch the real deduplicated reach from Resumo (Camp) sheet
-async function fetchTotalReach(): Promise<number | null> {
+// Fetch the real deduplicated reach from Resumo sheet (matrix: rows=metrics, cols=7d/14d/30d)
+interface PeriodReach {
+  reach7d: number | null;
+  reach14d: number | null;
+  reach30d: number | null;
+}
+
+async function fetchPeriodReach(): Promise<PeriodReach> {
+  const empty: PeriodReach = { reach7d: null, reach14d: null, reach30d: null };
   try {
     const res = await fetch(RESUMO_URL, {
       cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0" },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return empty;
     const text = await res.text();
     const lines = text.split("\n").filter((l) => l.trim() !== "");
-    if (lines.length < 2) return null;
-    const headers = parseCsvLine(lines[0]);
-    const reachIdx = headers.indexOf("Alcance");
-    if (reachIdx === -1) return null;
-    const row = parseCsvLine(lines[1]);
-    return parseNum(row[reachIdx] ?? "");
+    if (lines.length < 2) return empty;
+
+    // Structure: col 0 = metric label, col 1 = 7d, col 2 = 14d, col 3 = 30d
+    for (const line of lines) {
+      const cols = parseCsvLine(line);
+      const label = (cols[0] ?? "").trim();
+      if (label.startsWith("Alcance")) {
+        return {
+          reach7d: parseNum(cols[1] ?? ""),
+          reach14d: parseNum(cols[2] ?? ""),
+          reach30d: parseNum(cols[3] ?? ""),
+        };
+      }
+    }
+    return empty;
   } catch {
-    return null;
+    return empty;
   }
 }
 
 export async function GET() {
   try {
-    const [csvRes, leadCounts, totalReach] = await Promise.all([
+    const [csvRes, leadCounts, periodReach] = await Promise.all([
       fetch(ANUNCIOS_URL, {
         cache: "no-store",
         headers: { "User-Agent": "Mozilla/5.0" },
       }),
       fetchLeadCounts(),
-      fetchTotalReach(),
+      fetchPeriodReach(),
     ]);
 
     if (!csvRes.ok) {
@@ -143,13 +159,13 @@ export async function GET() {
       const impressions = parseNum(f[col("Impressões")] ?? "");
       const reach = parseNum(f[col("Alcance")] ?? "");
       const frequency = parseNum(f[col("Frequência")] ?? "");
-      const linkClicks = parseNum(f[col("Cliques")] ?? "");
-      const ctr = parseNum(f[col("CTR (%)")] ?? "");
+      const linkClicks = parseNum(f[col("Cliques no Link")] ?? "");
+      const ctr = parseNum(f[col("CTR Total (%)")] ?? "");
       const cpc = parseNum(f[col("CPC (R$)")] ?? "");
       const cpm = parseNum(f[col("CPM (R$)")] ?? "");
-      const videoViews = parseNum(f[col("Views Vídeo")] ?? "");
-      const pageViews = parseNum(f[col("Views Página")] ?? "");
-      const messages = parseNum(f[col("Mensagens")] ?? "");
+      const videoViews = parseNum(f[col("Videoviews (3s)")] ?? "");
+      const pageViews = parseNum(f[col("Views de Página")] ?? "");
+      const messages = parseNum(f[col("Conversas WhatsApp (7d)")] ?? "");
 
       // Use real lead count from leads spreadsheet
       const leadKey = `${day}|${adName}`;
@@ -178,7 +194,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { data: rows, totalReach, updatedAt: new Date().toISOString() },
+      { data: rows, periodReach, updatedAt: new Date().toISOString() },
       {
         headers: {
           "Cache-Control": "s-maxage=1800, stale-while-revalidate=3600",

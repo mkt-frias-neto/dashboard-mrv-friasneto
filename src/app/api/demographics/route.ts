@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 14400;
 
-const SHEET_ID = "1Sxtnbol0IO_RghkhhJyDS831C448PObzbDW7N3VxHlc";
-const AGE_GENDER_GID = "870638133";
-const PLACEMENT_GID = "2003961843";
-const DEVICE_GID = "592989396";
+const SHEET_ID = "1HrzuyyCeJhN4NH3aQAiv1vJDhaBa4sL2Gnh3TNw0Rh4";
+const AGE_GENDER_GID = "1410057629";
+const PLACEMENT_GID = "788755556";
+const DEVICE_GID = "1115433612";
 
 function csvUrl(gid: string) {
   return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
@@ -69,7 +69,7 @@ export async function GET() {
       const { headers, rows } = parseCsv(await ageRes.text());
       const col = (n: string) => headers.indexOf(n);
       for (const f of rows) {
-        const age = f[col("Idade")] ?? "";
+        const age = f[col("Faixa Etária")] ?? "";
         const genderRaw = (f[col("Gênero")] ?? "").toLowerCase();
         const gender =
           genderRaw === "female" ? "Feminino" :
@@ -80,8 +80,8 @@ export async function GET() {
           spend: parseNum(f[col("Investimento (R$)")] ?? ""),
           impressions: parseNum(f[col("Impressões")] ?? ""),
           reach: parseNum(f[col("Alcance")] ?? ""),
-          clicks: parseNum(f[col("Cliques")] ?? ""),
-          leads: parseNum(f[col("Resultados")] ?? ""),
+          clicks: parseNum(f[col("Cliques (Total)")] ?? ""),
+          leads: parseNum(f[col("Leads (Total)")] ?? ""),
           ctr: parseNum(f[col("CTR (%)")] ?? ""),
         });
       }
@@ -107,8 +107,8 @@ export async function GET() {
           spend: parseNum(f[col("Investimento (R$)")] ?? ""),
           impressions: parseNum(f[col("Impressões")] ?? ""),
           reach: parseNum(f[col("Alcance")] ?? ""),
-          clicks: parseNum(f[col("Cliques")] ?? ""),
-          leads: parseNum(f[col("Resultados")] ?? ""),
+          clicks: parseNum(f[col("Cliques no Link")] ?? ""),
+          leads: parseNum(f[col("Leads (Total)")] ?? ""),
         });
       }
     }
@@ -125,21 +125,32 @@ export async function GET() {
     if (deviceRes.ok) {
       const { headers, rows } = parseCsv(await deviceRes.text());
       const col = (n: string) => headers.indexOf(n);
+
+      // Aggregate by device category (rows may have device+platform combos)
+      const deviceMap: Record<string, { device: string; spend: number; impressions: number; reach: number; clicks: number; leads: number }> = {};
       for (const f of rows) {
-        const deviceRaw = (f[col("Dispositivo")] ?? "").toLowerCase();
-        const device =
-          deviceRaw === "mobile_app" ? "App Mobile" :
-          deviceRaw === "mobile_web" ? "Web Mobile" :
-          deviceRaw === "desktop" ? "Desktop" : deviceRaw;
-        devices.push({
-          device,
-          spend: parseNum(f[col("Investimento (R$)")] ?? ""),
-          impressions: parseNum(f[col("Impressões")] ?? ""),
-          reach: parseNum(f[col("Alcance")] ?? ""),
-          clicks: parseNum(f[col("Cliques")] ?? ""),
-          leads: parseNum(f[col("Resultados")] ?? ""),
-        });
+        const deviceRaw = (f[col("Dispositivo")] ?? "").toLowerCase().trim();
+        // Group into friendly categories
+        let device: string;
+        if (deviceRaw.includes("smartphone") || deviceRaw === "iphone") {
+          device = "Smartphone";
+        } else if (deviceRaw.includes("tablet") || deviceRaw === "ipad") {
+          device = "Tablet";
+        } else if (deviceRaw === "desktop") {
+          device = "Desktop";
+        } else {
+          device = deviceRaw || "Outros";
+        }
+        if (!deviceMap[device]) {
+          deviceMap[device] = { device, spend: 0, impressions: 0, reach: 0, clicks: 0, leads: 0 };
+        }
+        deviceMap[device].spend += parseNum(f[col("Investimento (R$)")] ?? "");
+        deviceMap[device].impressions += parseNum(f[col("Impressões")] ?? "");
+        deviceMap[device].reach += parseNum(f[col("Alcance")] ?? "");
+        deviceMap[device].clicks += parseNum(f[col("Cliques no Link")] ?? "");
+        deviceMap[device].leads += parseNum(f[col("Leads (Total)")] ?? "");
       }
+      devices.push(...Object.values(deviceMap));
     }
 
     return NextResponse.json({

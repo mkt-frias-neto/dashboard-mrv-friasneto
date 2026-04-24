@@ -32,7 +32,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [realTotalReach, setRealTotalReach] = useState<number | null>(null);
+  const [periodReach, setPeriodReach] = useState<{
+    reach7d: number | null;
+    reach14d: number | null;
+    reach30d: number | null;
+  } | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
@@ -51,7 +55,7 @@ export default function Dashboard() {
         if (json.data) {
           setAllData(json.data);
           setUpdatedAt(json.updatedAt ?? null);
-          if (json.totalReach) setRealTotalReach(json.totalReach);
+          if (json.periodReach) setPeriodReach(json.periodReach);
         } else {
           setError(json.error ?? "Erro ao carregar dados");
         }
@@ -69,17 +73,24 @@ export default function Dashboard() {
   const dailyData = useMemo(() => aggregateByDay(filtered), [filtered]);
   const adData = useMemo(() => aggregateByAd(filtered), [filtered]);
 
-  // Use real deduplicated reach when "Total" is selected with no other filters
-  const isTotal = filters.daysBack === null && !filters.customStart && !filters.customEnd;
+  // Use real deduplicated reach from Resumo when a matching period is selected
   const noSubFilters = !filters.campaign && !filters.adSet && !filters.adName;
-  const displayReach = isTotal && noSubFilters && realTotalReach
-    ? realTotalReach
-    : metrics.totalReach;
-  const reachSubtitle = isTotal && noSubFilters && realTotalReach
-    ? "Usuarios unicos"
-    : "Soma diaria";
-  const displayFrequency = isTotal && noSubFilters && realTotalReach
-    ? metrics.totalImpressions / realTotalReach
+  const noCustomDate = !filters.customStart && !filters.customEnd;
+
+  // Pick the right deduplicated reach based on selected period
+  const realReachForPeriod = (() => {
+    if (!periodReach || !noSubFilters || !noCustomDate) return null;
+    if (filters.daysBack === 7) return periodReach.reach7d;
+    if (filters.daysBack === 14) return periodReach.reach14d;
+    if (filters.daysBack === 30) return periodReach.reach30d;
+    if (filters.daysBack === null) return periodReach.reach30d; // Total: best available
+    return null; // -1 (yesterday) or other: use summed
+  })();
+
+  const displayReach = realReachForPeriod ?? metrics.totalReach;
+  const reachSubtitle = realReachForPeriod ? "Usuarios unicos" : "Soma diaria";
+  const displayFrequency = realReachForPeriod
+    ? metrics.totalImpressions / realReachForPeriod
     : metrics.avgFrequency;
 
   const isPresetActive = !showCustomDate && filters.customStart === null && filters.customEnd === null;

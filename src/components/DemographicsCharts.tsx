@@ -255,7 +255,7 @@ export default function DemographicsCharts() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <span className="text-base sm:text-lg">
-                      {d.device === "App Mobile" ? "📱" : d.device === "Desktop" ? "💻" : "🌐"}
+                      {d.device === "Smartphone" ? "📱" : d.device === "Tablet" ? "📱" : d.device === "Desktop" ? "💻" : "🌐"}
                     </span>
                     <span className="text-xs sm:text-sm font-medium text-gray-700">{d.device}</span>
                   </div>
