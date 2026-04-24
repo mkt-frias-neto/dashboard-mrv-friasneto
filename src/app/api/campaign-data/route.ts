@@ -80,15 +80,32 @@ async function fetchLeadCounts(): Promise<Record<string, number>> {
   }
 }
 
-// Fetch the real deduplicated reach from Resumo sheet (matrix: rows=metrics, cols=7d/14d/30d)
-interface PeriodReach {
-  reach7d: number | null;
-  reach14d: number | null;
-  reach30d: number | null;
+// Fetch ALL metrics from Resumo sheet (matrix: rows=metrics, cols=7d/14d/30d)
+interface PeriodMetrics {
+  spent: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  ctr: number;
+  cpm: number;
+  cpc: number;
+  leads: number;
+  costPerLead: number;
+  videoViews: number;
+  messages: number;
 }
 
-async function fetchPeriodReach(): Promise<PeriodReach> {
-  const empty: PeriodReach = { reach7d: null, reach14d: null, reach30d: null };
+type ResumoData = Record<string, PeriodMetrics>;
+
+async function fetchResumoMetrics(): Promise<ResumoData> {
+  const emptyMetrics = (): PeriodMetrics => ({
+    spent: 0, impressions: 0, reach: 0, frequency: 0,
+    clicks: 0, ctr: 0, cpm: 0, cpc: 0,
+    leads: 0, costPerLead: 0, videoViews: 0, messages: 0,
+  });
+  const empty: ResumoData = { "7": emptyMetrics(), "14": emptyMetrics(), "30": emptyMetrics() };
+
   try {
     const res = await fetch(RESUMO_URL, {
       cache: "no-store",
@@ -100,18 +117,39 @@ async function fetchPeriodReach(): Promise<PeriodReach> {
     if (lines.length < 2) return empty;
 
     // Structure: col 0 = metric label, col 1 = 7d, col 2 = 14d, col 3 = 30d
+    // Map label prefixes to our metric keys
+    const labelMap: Record<string, keyof PeriodMetrics> = {
+      "Investimento": "spent",
+      "Impressões": "impressions",
+      "Alcance": "reach",
+      "Frequência": "frequency",
+      "Cliques no Link": "clicks",
+      "CTR": "ctr",
+      "CPM": "cpm",
+      "CPC": "cpc",
+      "Leads (Total)": "leads",
+      "Custo/Lead": "costPerLead",
+      "Videoviews": "videoViews",
+      "Conversas WhatsApp": "messages",
+    };
+
+    const result: ResumoData = { "7": emptyMetrics(), "14": emptyMetrics(), "30": emptyMetrics() };
+
     for (const line of lines) {
       const cols = parseCsvLine(line);
       const label = (cols[0] ?? "").trim();
-      if (label.startsWith("Alcance")) {
-        return {
-          reach7d: parseNum(cols[1] ?? ""),
-          reach14d: parseNum(cols[2] ?? ""),
-          reach30d: parseNum(cols[3] ?? ""),
-        };
+
+      for (const [prefix, key] of Object.entries(labelMap)) {
+        if (label.startsWith(prefix)) {
+          result["7"][key] = parseNum(cols[1] ?? "");
+          result["14"][key] = parseNum(cols[2] ?? "");
+          result["30"][key] = parseNum(cols[3] ?? "");
+          break;
+        }
       }
     }
-    return empty;
+
+    return result;
   } catch {
     return empty;
   }
@@ -119,13 +157,13 @@ async function fetchPeriodReach(): Promise<PeriodReach> {
 
 export async function GET() {
   try {
-    const [csvRes, leadCounts, periodReach] = await Promise.all([
+    const [csvRes, leadCounts, resumoMetrics] = await Promise.all([
       fetch(ANUNCIOS_URL, {
         cache: "no-store",
         headers: { "User-Agent": "Mozilla/5.0" },
       }),
       fetchLeadCounts(),
-      fetchPeriodReach(),
+      fetchResumoMetrics(),
     ]);
 
     if (!csvRes.ok) {
@@ -194,7 +232,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { data: rows, periodReach, updatedAt: new Date().toISOString() },
+      { data: rows, resumoMetrics, updatedAt: new Date().toISOString() },
       {
         headers: {
           "Cache-Control": "s-maxage=1800, stale-while-revalidate=3600",

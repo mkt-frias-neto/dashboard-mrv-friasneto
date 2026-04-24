@@ -32,11 +32,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [periodReach, setPeriodReach] = useState<{
-    reach7d: number | null;
-    reach14d: number | null;
-    reach30d: number | null;
-  } | null>(null);
+  const [resumoMetrics, setResumoMetrics] = useState<Record<string, {
+    spent: number; impressions: number; reach: number; frequency: number;
+    clicks: number; ctr: number; cpm: number; cpc: number;
+    leads: number; costPerLead: number; videoViews: number; messages: number;
+  }> | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
@@ -55,7 +55,7 @@ export default function Dashboard() {
         if (json.data) {
           setAllData(json.data);
           setUpdatedAt(json.updatedAt ?? null);
-          if (json.periodReach) setPeriodReach(json.periodReach);
+          if (json.resumoMetrics) setResumoMetrics(json.resumoMetrics);
         } else {
           setError(json.error ?? "Erro ao carregar dados");
         }
@@ -73,25 +73,26 @@ export default function Dashboard() {
   const dailyData = useMemo(() => aggregateByDay(filtered), [filtered]);
   const adData = useMemo(() => aggregateByAd(filtered), [filtered]);
 
-  // Use real deduplicated reach from Resumo when a matching period is selected
+  // Use Resumo metrics (accurate period totals from Meta) for KPI cards
+  // when a standard period (7d/14d/30d) is selected with no sub-filters
   const noSubFilters = !filters.campaign && !filters.adSet && !filters.adName;
   const noCustomDate = !filters.customStart && !filters.customEnd;
+  const periodKey = filters.daysBack !== null && filters.daysBack > 0 ? String(filters.daysBack) : null;
+  const useResumo = !!(resumoMetrics && periodKey && resumoMetrics[periodKey] && noSubFilters && noCustomDate);
+  const rm = useResumo ? resumoMetrics![periodKey!] : null;
 
-  // Pick the right deduplicated reach based on selected period
-  const realReachForPeriod = (() => {
-    if (!periodReach || !noSubFilters || !noCustomDate) return null;
-    if (filters.daysBack === 7) return periodReach.reach7d;
-    if (filters.daysBack === 14) return periodReach.reach14d;
-    if (filters.daysBack === 30) return periodReach.reach30d;
-    if (filters.daysBack === null) return periodReach.reach30d; // Total: best available
-    return null; // -1 (yesterday) or other: use summed
-  })();
-
-  const displayReach = realReachForPeriod ?? metrics.totalReach;
-  const reachSubtitle = realReachForPeriod ? "Usuarios unicos" : "Soma diaria";
-  const displayFrequency = realReachForPeriod
-    ? metrics.totalImpressions / realReachForPeriod
-    : metrics.avgFrequency;
+  const displaySpent = rm?.spent ?? metrics.totalSpent;
+  const displayReach = rm?.reach ?? metrics.totalReach;
+  const displayImpressions = rm?.impressions ?? metrics.totalImpressions;
+  const displayClicks = rm?.clicks ?? metrics.totalClicks;
+  const displayLeads = rm?.leads ?? metrics.totalLeads;
+  const displayCPM = rm?.cpm ?? metrics.avgCPM;
+  const displayCPC = rm?.cpc ?? metrics.avgCPC;
+  const displayCTR = rm?.ctr ?? metrics.avgCTR;
+  const displayCPL = rm?.costPerLead ?? metrics.avgCostPerLead;
+  const displayFrequency = rm?.frequency ?? metrics.avgFrequency;
+  const displayVideoViews = rm?.videoViews ?? metrics.totalVideoViews;
+  const reachSubtitle = useResumo ? "Usuarios unicos" : "Soma diaria";
 
   const isPresetActive = !showCustomDate && filters.customStart === null && filters.customEnd === null;
 
@@ -231,21 +232,21 @@ export default function Dashboard() {
 
             {/* KPI Cards — 2 cols mobile, 5 cols desktop */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-              <MetricCard title="Investimento" value={formatBRL(metrics.totalSpent)} icon="money" color="orange" />
+              <MetricCard title="Investimento" value={formatBRL(displaySpent)} icon="money" color="orange" />
               <MetricCard title="Alcance" value={formatNum(displayReach)} icon="users" color="blue" subtitle={reachSubtitle} />
-              <MetricCard title="Impressoes" value={formatNum(metrics.totalImpressions)} icon="eye" color="blue" />
-              <MetricCard title="Cliques" value={formatNum(metrics.totalClicks)} icon="click" color="yellow" />
-              <MetricCard title="Leads" value={formatNum(metrics.totalLeads)} icon="target" color="green" />
+              <MetricCard title="Impressoes" value={formatNum(displayImpressions)} icon="eye" color="blue" />
+              <MetricCard title="Cliques" value={formatNum(displayClicks)} icon="click" color="yellow" />
+              <MetricCard title="Leads" value={formatNum(displayLeads)} icon="target" color="green" />
             </div>
 
             {/* Secondary KPIs */}
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
-              <MetricCard title="CPM" value={formatBRL(metrics.avgCPM)} icon="chart" color="light" small />
-              <MetricCard title="CPC" value={formatBRL(metrics.avgCPC)} icon="dollar" color="light" small />
-              <MetricCard title="CTR" value={formatPct(metrics.avgCTR)} icon="trending" color="light" small />
-              <MetricCard title="CPL" value={formatBRL(metrics.avgCostPerLead)} icon="tag" color="light" small />
+              <MetricCard title="CPM" value={formatBRL(displayCPM)} icon="chart" color="light" small />
+              <MetricCard title="CPC" value={formatBRL(displayCPC)} icon="dollar" color="light" small />
+              <MetricCard title="CTR" value={formatPct(displayCTR)} icon="trending" color="light" small />
+              <MetricCard title="CPL" value={formatBRL(displayCPL)} icon="tag" color="light" small />
               <MetricCard title="Freq." value={formatDec(displayFrequency)} icon="refresh" color="light" small />
-              <MetricCard title="Views Video" value={formatNum(metrics.totalVideoViews)} icon="play" color="light" small />
+              <MetricCard title="Views Video" value={formatNum(displayVideoViews)} icon="play" color="light" small />
             </div>
 
             {/* Chart */}
