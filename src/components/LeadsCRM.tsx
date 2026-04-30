@@ -59,6 +59,7 @@ function getLeadDate(iso: string): string {
 }
 
 const DATE_PRESETS = [
+  { label: "Ontem", days: -1 },
   { label: "7d", days: 7 },
   { label: "14d", days: 14 },
   { label: "30d", days: 30 },
@@ -108,14 +109,23 @@ export default function LeadsCRM() {
     } else if (daysBack !== null) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const todayStr = toDateStr(today);
-      const startDate = new Date(today);
-      startDate.setDate(today.getDate() - daysBack + 1);
-      const startStr = toDateStr(startDate);
-      result = result.filter((l) => {
-        const d = getLeadDate(l.createdTime);
-        return d >= startStr && d <= todayStr;
-      });
+
+      if (daysBack === -1) {
+        // "Ontem" — only yesterday
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        const yStr = toDateStr(yesterday);
+        result = result.filter((l) => getLeadDate(l.createdTime) === yStr);
+      } else {
+        const todayStr = toDateStr(today);
+        const startDate = new Date(today);
+        startDate.setDate(today.getDate() - daysBack + 1);
+        const startStr = toDateStr(startDate);
+        result = result.filter((l) => {
+          const d = getLeadDate(l.createdTime);
+          return d >= startStr && d <= todayStr;
+        });
+      }
     }
 
     // Status filter
