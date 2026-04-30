@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 // Cache for 4 hours — refreshed by GitHub Actions deploy at 7h, 11h, 13h, 17h
 export const revalidate = 14400;
+export const maxDuration = 60;
 
 const LEADS_SHEET_ID = "1SbIcGGizozINPj9RLU1t359DbOY0YO5goVJcBO3xk5Q";
 const LEADS_CSV_URL = `https://docs.google.com/spreadsheets/d/${LEADS_SHEET_ID}/export?format=csv`;
@@ -108,7 +109,7 @@ async function ksiFetch(params: Record<string, string>): Promise<any> {
     const res = await fetch(url.toString(), {
       cache: "no-store",
       headers: { Authorization: `Bearer ${KSI_TOKEN}` },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -127,11 +128,17 @@ async function getClosureReasons(): Promise<Record<string, string>> {
   const operacoes = ["V", "E", "L"];
   const map: Record<string, string> = {};
 
-  for (const op of operacoes) {
-    const result = await ksiFetch({
-      ws_destino: "ORDEM_ATENDIMENTO_FECHAMENTO_MOTIVOS",
-      oa_operacao: op,
-    });
+  // Fetch all 3 operations in parallel
+  const results = await Promise.all(
+    operacoes.map((op) =>
+      ksiFetch({
+        ws_destino: "ORDEM_ATENDIMENTO_FECHAMENTO_MOTIVOS",
+        oa_operacao: op,
+      })
+    )
+  );
+
+  for (const result of results) {
     if (result?.sucesso === "1" && result.dados) {
       for (const d of result.dados) {
         map[d.id] = d.nome;
@@ -294,7 +301,7 @@ export async function GET() {
     const vendaKeywords = ["comprou", "venda", "vendido", "fechou negócio", "fechou negocio", "pós venda", "pos venda"];
 
     const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string; closureType: string }> = [];
-    const batchSize = 3;
+    const batchSize = 15;
 
     for (let i = 0; i < leads.length; i += batchSize) {
       const batch = leads.slice(i, i + batchSize);
