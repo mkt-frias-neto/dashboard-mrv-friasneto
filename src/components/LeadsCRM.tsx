@@ -107,23 +107,26 @@ export default function LeadsCRM() {
         return true;
       });
     } else if (daysBack !== null) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Anchor periods to the latest lead date (matches Meta's period windows,
+      // which end on the last day with data — not "today"). This keeps the
+      // leads funnel in sync with the campaign KPIs.
+      const latestDay = leads.reduce((max, l) => {
+        const d = getLeadDate(l.createdTime);
+        return d > max ? d : max;
+      }, "");
+      const endStr = latestDay || toDateStr(new Date());
 
       if (daysBack === -1) {
-        // "Ontem" — only yesterday
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        const yStr = toDateStr(yesterday);
-        result = result.filter((l) => getLeadDate(l.createdTime) === yStr);
+        // "Ontem" — the latest day with leads
+        result = result.filter((l) => getLeadDate(l.createdTime) === endStr);
       } else {
-        const todayStr = toDateStr(today);
-        const startDate = new Date(today);
-        startDate.setDate(today.getDate() - daysBack + 1);
+        const endDate = new Date(endStr + "T12:00:00");
+        const startDate = new Date(endDate);
+        startDate.setDate(endDate.getDate() - daysBack + 1);
         const startStr = toDateStr(startDate);
         result = result.filter((l) => {
           const d = getLeadDate(l.createdTime);
-          return d >= startStr && d <= todayStr;
+          return d >= startStr && d <= endStr;
         });
       }
     }
