@@ -203,33 +203,29 @@ async function fetchKsiOrders(
   return [];
 }
 
-// Combined query: search by email AND phone, merge all results, pick the best
+// Combined query: search by email AND phone, merge all results, pick the best.
+// All 4 queries (ABERTA + ALL, by email + phone) fire in a single parallel
+// round to avoid sequential latency. Logic still prefers ABERTA orders.
 async function queryKsiCombined(
   email: string,
   phone: string
 ): Promise<CrmStatus | null> {
-  // Step 1: search ABERTA by email and phone in parallel
-  const [openByEmail, openByPhone] = await Promise.all([
+  const [openByEmail, openByPhone, allByEmail, allByPhone] = await Promise.all([
     email ? fetchKsiOrders("oa_email", email, true) : Promise.resolve([]),
     phone ? fetchKsiOrders("oa_telefone", phone, true) : Promise.resolve([]),
+    email ? fetchKsiOrders("oa_email", email, false) : Promise.resolve([]),
+    phone ? fetchKsiOrders("oa_telefone", phone, false) : Promise.resolve([]),
   ]);
 
-  // Merge and deduplicate by order ID
+  // Prefer open orders (from flag=1 queries)
   const openAll = deduplicateOrders([...openByEmail, ...openByPhone]);
-
   if (openAll.length > 0) {
     const best = pickBestOrder(openAll);
     if (best) return toCrmStatus(best);
   }
 
-  // Step 2: no open orders found — search ALL by email and phone
-  const [allByEmail, allByPhone] = await Promise.all([
-    email ? fetchKsiOrders("oa_email", email, false) : Promise.resolve([]),
-    phone ? fetchKsiOrders("oa_telefone", phone, false) : Promise.resolve([]),
-  ]);
-
+  // Fall back to all orders (flag=0 queries)
   const allOrders = deduplicateOrders([...allByEmail, ...allByPhone]);
-
   if (allOrders.length > 0) {
     const best = pickBestOrder(allOrders);
     if (best) return toCrmStatus(best);
@@ -301,7 +297,7 @@ export async function GET() {
     const vendaKeywords = ["comprou", "venda", "vendido", "fechou negócio", "fechou negocio", "pós venda", "pos venda"];
 
     const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string; closureType: string }> = [];
-    const batchSize = 15;
+    const batchSize = 40;
 
     for (let i = 0; i < leads.length; i += batchSize) {
       const batch = leads.slice(i, i + batchSize);
