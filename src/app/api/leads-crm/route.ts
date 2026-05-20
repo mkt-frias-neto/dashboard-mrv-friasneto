@@ -109,7 +109,7 @@ async function ksiFetch(params: Record<string, string>): Promise<any> {
     const res = await fetch(url.toString(), {
       cache: "no-store",
       headers: { Authorization: `Bearer ${KSI_TOKEN}` },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -296,30 +296,38 @@ export async function GET() {
     // Closure reasons whose name contains these keywords = VENDA (sale)
     const vendaKeywords = ["comprou", "venda", "vendido", "fechou negócio", "fechou negocio", "pós venda", "pos venda"];
 
-    const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string; closureType: string }> = [];
-    const batchSize = 40;
+    const enrichLead = async (lead: LeadRow) => {
+      const crm = await queryKsiCombined(lead.email, lead.phoneFormatted);
+      let motivoNome = "";
+      if (crm?.motivoFechamento) {
+        motivoNome = closureReasons[crm.motivoFechamento] ?? crm.motivoFechamento;
+      }
+      // Determine closure type: "venda", "lost", or ""
+      let closureType = "";
+      if (crm?.situacao === "FECHADA") {
+        const motivoLower = motivoNome.toLowerCase();
+        const isVenda = vendaKeywords.some((kw) => motivoLower.includes(kw));
+        closureType = isVenda ? "venda" : "lost";
+      }
+      return { ...lead, crm, motivoNome, closureType };
+    };
 
-    for (let i = 0; i < leads.length; i += batchSize) {
-      const batch = leads.slice(i, i + batchSize);
-      const results = await Promise.all(
-        batch.map(async (lead) => {
-          const crm = await queryKsiCombined(lead.email, lead.phoneFormatted);
-          let motivoNome = "";
-          if (crm?.motivoFechamento) {
-            motivoNome = closureReasons[crm.motivoFechamento] ?? crm.motivoFechamento;
-          }
-          // Determine closure type: "venda", "lost", or ""
-          let closureType = "";
-          if (crm?.situacao === "FECHADA") {
-            const motivoLower = motivoNome.toLowerCase();
-            const isVenda = vendaKeywords.some((kw) => motivoLower.includes(kw));
-            closureType = isVenda ? "venda" : "lost";
-          }
-          return { ...lead, crm, motivoNome, closureType };
-        })
-      );
-      enriched.push(...results);
-    }
+    // Sliding-window concurrency: process up to LEAD_CONCURRENCY leads at once.
+    // Each lead fires 4 KSI calls, so peak ~LEAD_CONCURRENCY*4 simultaneous
+    // requests. Keep this around ~40 to avoid saturating the KSI connection.
+    const LEAD_CONCURRENCY = 10;
+    const enriched: Array<LeadRow & { crm: CrmStatus | null; motivoNome: string; closureType: string }> =
+      new Array(leads.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < leads.length) {
+        const i = cursor++;
+        enriched[i] = await enrichLead(leads[i]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(LEAD_CONCURRENCY, leads.length) }, () => worker())
+    );
 
     // 3. Summary
     const total = enriched.length;
