@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/fetch-crm.mjs && next build",
-    "start": "next start"
+    "build": "next build",
+    "start": "next start",
+    "fetch-crm": "node scripts/fetch-crm.mjs"
   },
   "dependencies": {
     "next": "14.2.21",

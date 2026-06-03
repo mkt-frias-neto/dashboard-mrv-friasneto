@@ -19,7 +19,9 @@ const KSI_TOKEN = "252c72ea3daa906ce07f3619c5eca804";
 
 // Lower concurrency = more reliable (KSI rate-limits above ~30 concurrent calls).
 // No 60s limit at build time, so we favor reliability over speed.
-const LEAD_CONCURRENCY = 6;
+// KSI rate-limita rajadas (~3 chamadas seguidas -> HTTP 429).
+// Concorrencia 1 = 2 chamadas simultaneas por lead, dentro do limite.
+const LEAD_CONCURRENCY = 1;
 
 function parseCsvLine(line) {
   const fields = [];
@@ -64,27 +66,43 @@ function toTitleCase(name) {
     .join(" ");
 }
 
-async function ksiFetch(params, retries = 1) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+// KSI implementa rate limit (~3 chamadas em rajada → HTTP 429).
+// Para 429, retry com backoff longo. Para outros erros, retry curto.
+async function ksiFetch(params, maxRetries = 4) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const url = new URL(KSI_BASE);
       url.searchParams.set("id", KSI_SCOPE_ID);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
       const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${KSI_TOKEN}` },
+        headers: {
+          Authorization: `Bearer ${KSI_TOKEN}`,
+          "User-Agent": "Mozilla/5.0 (compatible; FriasNetoDashboard/1.0)",
+          Accept: "application/json",
+        },
         signal: AbortSignal.timeout(15000),
       });
+      if (res.status === 429) {
+        if (attempt < maxRetries) {
+          // backoff exponencial 2s, 4s, 6s, 8s
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        if (process.env.DEBUG_KSI) console.warn(`[ksi] HTTP 429 (rate limit) apos ${maxRetries + 1} tentativas`);
+        return null;
+      }
       if (!res.ok) {
-        if (attempt < retries) {
+        if (attempt < maxRetries) {
           await new Promise((r) => setTimeout(r, 500));
           continue;
         }
+        if (process.env.DEBUG_KSI) console.warn(`[ksi] HTTP ${res.status}`);
         return null;
       }
       const json = await res.json();
       return Array.isArray(json) ? json[0] : json;
     } catch {
-      if (attempt < retries) {
+      if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, 500));
         continue;
       }
@@ -156,13 +174,18 @@ async function fetchKsiOrders(searchParam, searchValue, onlyOpen) {
 }
 
 async function queryKsiCombined(email, phone) {
-  const [openByEmail, openByPhone, allByEmail, allByPhone] = await Promise.all([
-    email ? fetchKsiOrders("oa_email", email, true) : Promise.resolve([]),
-    phone ? fetchKsiOrders("oa_telefone", phone, true) : Promise.resolve([]),
+  // Single-pass com flag=0 (retorna ABERTA e FECHADA). pickBestOrder ja
+  // prefere ABERTA. Reduzido de 4 para 2 chamadas por lead pra fugir do
+  // rate limit do KSI.
+  const [allByEmail, allByPhone] = await Promise.all([
     email ? fetchKsiOrders("oa_email", email, false) : Promise.resolve([]),
     phone ? fetchKsiOrders("oa_telefone", phone, false) : Promise.resolve([]),
   ]);
-  const openAll = deduplicateOrders([...openByEmail, ...openByPhone]);
+  const openAll = deduplicateOrders(
+    [...allByEmail, ...allByPhone].filter(
+      (o) => (o.situcao ?? o.situacao ?? "").toUpperCase() === "ABERTA"
+    )
+  );
   if (openAll.length > 0) {
     const best = pickBestOrder(openAll);
     if (best) return toCrmStatus(best);
