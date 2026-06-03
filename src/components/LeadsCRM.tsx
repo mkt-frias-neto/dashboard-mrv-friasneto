@@ -30,15 +30,12 @@ interface LeadItem {
 interface Summary {
   total: number;
   aberta: number;
-  lost: number;
-  venda: number;
+  fechada: number;
 }
 
 function getStatusConfig(lead: LeadItem) {
   if (lead.crm?.situacao === "ABERTA") return { label: "Em Atendimento", bg: "bg-blue-100", text: "text-blue-800", key: "aberta" };
-  if (lead.closureType === "venda") return { label: "Venda", bg: "bg-green-100", text: "text-green-800", key: "venda" };
-  if (lead.closureType === "lost") return { label: "Lost", bg: "bg-red-100", text: "text-red-700", key: "lost" };
-  if (lead.crm?.situacao === "FECHADA") return { label: "Lost", bg: "bg-red-100", text: "text-red-700", key: "lost" };
+  if (lead.crm?.situacao === "FECHADA" || lead.closureType === "fechada") return { label: "Fechada", bg: "bg-gray-200", text: "text-gray-700", key: "fechada" };
   return { label: "Nao encontrado", bg: "bg-yellow-100", text: "text-yellow-800", key: "unknown" };
 }
 
@@ -143,12 +140,8 @@ export default function LeadsCRM() {
   const summary = useMemo<Summary>(() => {
     const total = filtered.length;
     const aberta = filtered.filter((l) => l.crm?.situacao === "ABERTA").length;
-    const lost = filtered.filter((l) => {
-      const st = getStatusConfig(l);
-      return st.key === "lost";
-    }).length;
-    const venda = filtered.filter((l) => l.closureType === "venda").length;
-    return { total, aberta, lost, venda };
+    const fechada = filtered.filter((l) => getStatusConfig(l).key === "fechada").length;
+    return { total, aberta, fechada };
   }, [filtered]);
 
   const isPresetActive = !showCustom && customStart === null && customEnd === null;
@@ -260,7 +253,7 @@ export default function LeadsCRM() {
       </div>
 
       {/* Funnel Cards — clickable as status filter */}
-      <div className="grid grid-cols-4 gap-2 sm:gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <FunnelCard
           label="Total"
           value={summary.total}
@@ -270,7 +263,7 @@ export default function LeadsCRM() {
           onClick={() => setStatusFilter(null)}
         />
         <FunnelCard
-          label="Atendimento"
+          label="Em Atendimento"
           value={summary.aberta}
           color="bg-blue-500"
           icon="📋"
@@ -279,22 +272,13 @@ export default function LeadsCRM() {
           onClick={() => setStatusFilter(statusFilter === "aberta" ? null : "aberta")}
         />
         <FunnelCard
-          label="Lost"
-          value={summary.lost}
-          color="bg-red-500"
-          icon="❌"
-          pct={summary.total > 0 ? (summary.lost / summary.total) * 100 : 0}
-          active={statusFilter === "lost"}
-          onClick={() => setStatusFilter(statusFilter === "lost" ? null : "lost")}
-        />
-        <FunnelCard
-          label="Venda"
-          value={summary.venda}
-          color="bg-green-500"
-          icon="🏆"
-          pct={summary.total > 0 ? (summary.venda / summary.total) * 100 : 0}
-          active={statusFilter === "venda"}
-          onClick={() => setStatusFilter(statusFilter === "venda" ? null : "venda")}
+          label="Fechada"
+          value={summary.fechada}
+          color="bg-gray-500"
+          icon="✔️"
+          pct={summary.total > 0 ? (summary.fechada / summary.total) * 100 : 0}
+          active={statusFilter === "fechada"}
+          onClick={() => setStatusFilter(statusFilter === "fechada" ? null : "fechada")}
         />
       </div>
 
@@ -305,7 +289,7 @@ export default function LeadsCRM() {
             Leads x CRM
             {statusFilter && (
               <span className="ml-2 text-xs font-normal text-gray-400">
-                ({statusFilter === "aberta" ? "Em Atendimento" : statusFilter === "lost" ? "Lost" : "Venda"})
+                ({statusFilter === "aberta" ? "Em Atendimento" : "Fechada"})
               </span>
             )}
           </h2>

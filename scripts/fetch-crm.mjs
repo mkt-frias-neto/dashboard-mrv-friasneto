@@ -3,7 +3,7 @@
 // This avoids querying KSI live on every request, which times out / gets
 // rate-limited with hundreds of leads. The dashboard then loads instantly.
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,9 +19,9 @@ const KSI_TOKEN = "252c72ea3daa906ce07f3619c5eca804";
 
 // Lower concurrency = more reliable (KSI rate-limits above ~30 concurrent calls).
 // No 60s limit at build time, so we favor reliability over speed.
-// KSI rate-limita rajadas (~3 chamadas seguidas -> HTTP 429).
-// Concorrencia 1 = 2 chamadas simultaneas por lead, dentro do limite.
-const LEAD_CONCURRENCY = 1;
+// Concorrencia alta nao causa 429 porque o ksiThrottle global limita
+// quantas calls saem por segundo. Mais concorrencia so enche o pipeline.
+const LEAD_CONCURRENCY = 6;
 
 function parseCsvLine(line) {
   const fields = [];
@@ -66,11 +66,23 @@ function toTitleCase(name) {
     .join(" ");
 }
 
-// KSI implementa rate limit (~3 chamadas em rajada → HTTP 429).
+// KSI rate-limita ~3 chamadas em rajada -> HTTP 429.
+// Throttle global: minimo MIN_INTERVAL_MS entre QUALQUER duas chamadas.
+const MIN_INTERVAL_MS = 400;
+let nextCallAt = 0;
+async function ksiThrottle() {
+  const now = Date.now();
+  const slot = Math.max(now, nextCallAt);
+  nextCallAt = slot + MIN_INTERVAL_MS;
+  const wait = slot - now;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+}
+
 // Para 429, retry com backoff longo. Para outros erros, retry curto.
 async function ksiFetch(params, maxRetries = 4) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      await ksiThrottle();
       const url = new URL(KSI_BASE);
       url.searchParams.set("id", KSI_SCOPE_ID);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -212,16 +224,30 @@ async function main() {
     console.error("[fetch-crm] Keeping existing cache (if any). Build continues.");
     if (!existsSync(OUT_PATH)) {
       mkdirSync(dirname(OUT_PATH), { recursive: true });
-      writeFileSync(OUT_PATH, JSON.stringify({ leads: [], summary: { total: 0, aberta: 0, lost: 0, venda: 0 }, closureReasons: {}, updatedAt: new Date().toISOString() }));
+      writeFileSync(OUT_PATH, JSON.stringify({ leads: [], summary: { total: 0, aberta: 0, fechada: 0 }, updatedAt: new Date().toISOString() }));
     }
     return;
   }
 
-  const closureReasons = await getClosureReasons();
+  // Carrega o cache anterior pra reaproveitar leads ja com CRM identificado.
+  // O corretor responsavel raramente muda apos a 1a atribuicao, entao soh
+  // consultamos leads NOVOS ou que ainda nao foram encontrados.
+  const cachedByLeadId = new Map();
+  if (existsSync(OUT_PATH)) {
+    try {
+      const prev = JSON.parse(readFileSync(OUT_PATH, "utf8"));
+      for (const l of prev.leads || []) {
+        if (l.id && l.crm) cachedByLeadId.set(l.id, l);
+      }
+      console.log(`[fetch-crm] ${cachedByLeadId.size} leads com CRM ja no cache (vao ser reaproveitados).`);
+    } catch {
+      console.warn("[fetch-crm] Cache anterior invalido, comecando do zero.");
+    }
+  }
 
   const lines = csvText.split("\n").filter((l) => l.trim() !== "");
   if (lines.length < 2) {
-    writeFileSync(OUT_PATH, JSON.stringify({ leads: [], summary: { total: 0, aberta: 0, lost: 0, venda: 0 }, closureReasons, updatedAt: new Date().toISOString() }));
+    writeFileSync(OUT_PATH, JSON.stringify({ leads: [], summary: { total: 0, aberta: 0, fechada: 0 }, updatedAt: new Date().toISOString() }));
     return;
   }
 
@@ -249,46 +275,58 @@ async function main() {
     });
   }
 
-  console.log(`[fetch-crm] ${leads.length} leads to query.`);
-
-  const vendaKeywords = ["comprou", "venda", "vendido", "fechou negócio", "fechou negocio", "pós venda", "pos venda"];
-
+  // Como nao temos como distinguir Lost x Venda pela API do KSI,
+  // unificamos tudo como "FECHADA". So separamos ABERTA x FECHADA.
   const enrichLead = async (lead) => {
     const crm = await queryKsiCombined(lead.email, lead.phoneFormatted);
-    let motivoNome = "";
-    if (crm?.motivoFechamento) motivoNome = closureReasons[crm.motivoFechamento] ?? crm.motivoFechamento;
-    let closureType = "";
-    if (crm?.situacao === "FECHADA") {
-      const motivoLower = motivoNome.toLowerCase();
-      const isVenda = vendaKeywords.some((kw) => motivoLower.includes(kw));
-      closureType = isVenda ? "venda" : "lost";
-    }
-    return { ...lead, crm, motivoNome, closureType };
+    const closureType = crm?.situacao === "FECHADA" ? "fechada" : "";
+    return { ...lead, crm, motivoNome: "", closureType };
   };
+
+  // Determina quais leads precisam ser consultados (so os novos ou sem CRM).
+  const leadsToQuery = [];
+  for (const lead of leads) {
+    if (lead.id && cachedByLeadId.has(lead.id)) {
+      // Mantem os dados de CRM do cache, mas atualiza os campos do lead
+      // (caso o nome/email/etc. tenha sido normalizado de forma diferente).
+      const cached = cachedByLeadId.get(lead.id);
+      leadsToQuery.push({ lead, cached });
+    } else {
+      leadsToQuery.push({ lead, cached: null });
+    }
+  }
+
+  const toConsult = leadsToQuery.filter((x) => !x.cached).length;
+  console.log(`[fetch-crm] ${leads.length} leads total | ${leadsToQuery.length - toConsult} ja no cache | ${toConsult} novos para consultar`);
 
   const enriched = new Array(leads.length);
   let cursor = 0;
   const worker = async () => {
     while (cursor < leads.length) {
       const i = cursor++;
-      enriched[i] = await enrichLead(leads[i]);
+      const { lead, cached } = leadsToQuery[i];
+      if (cached) {
+        // Reaproveita o CRM ja conhecido, mantendo dados frescos do lead
+        enriched[i] = { ...lead, crm: cached.crm, motivoNome: "", closureType: cached.crm?.situacao === "FECHADA" ? "fechada" : "" };
+      } else {
+        enriched[i] = await enrichLead(lead);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(LEAD_CONCURRENCY, leads.length) }, () => worker()));
 
   const total = enriched.length;
   const aberta = enriched.filter((l) => l.crm?.situacao === "ABERTA").length;
-  const lost = enriched.filter((l) => l.closureType === "lost").length;
-  const venda = enriched.filter((l) => l.closureType === "venda").length;
+  const fechada = enriched.filter((l) => l.closureType === "fechada").length;
   const notFound = enriched.filter((l) => !l.crm).length;
 
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   writeFileSync(
     OUT_PATH,
-    JSON.stringify({ leads: enriched, summary: { total, aberta, lost, venda }, closureReasons, updatedAt: new Date().toISOString() })
+    JSON.stringify({ leads: enriched, summary: { total, aberta, fechada }, updatedAt: new Date().toISOString() })
   );
 
-  console.log(`[fetch-crm] Done. total=${total} aberta=${aberta} lost=${lost} venda=${venda} naoEncontrado=${notFound}`);
+  console.log(`[fetch-crm] Done. total=${total} aberta=${aberta} fechada=${fechada} naoEncontrado=${notFound}`);
 }
 
 main().catch((err) => {
