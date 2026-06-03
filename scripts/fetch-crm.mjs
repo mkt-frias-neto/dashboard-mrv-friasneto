@@ -229,9 +229,10 @@ async function main() {
     return;
   }
 
-  // Carrega o cache anterior pra reaproveitar leads ja com CRM identificado.
-  // O corretor responsavel raramente muda apos a 1a atribuicao, entao soh
-  // consultamos leads NOVOS ou que ainda nao foram encontrados.
+  // Carrega o cache anterior. Estrategia:
+  // - Lead FECHADA no cache: reaproveita (raramente reabre).
+  // - Lead ABERTA no cache: RE-consulta (pode ter virado FECHADA).
+  // - Lead sem CRM ou novo: consulta.
   const cachedByLeadId = new Map();
   if (existsSync(OUT_PATH)) {
     try {
@@ -239,7 +240,9 @@ async function main() {
       for (const l of prev.leads || []) {
         if (l.id && l.crm) cachedByLeadId.set(l.id, l);
       }
-      console.log(`[fetch-crm] ${cachedByLeadId.size} leads com CRM ja no cache (vao ser reaproveitados).`);
+      const cachedFechada = [...cachedByLeadId.values()].filter((l) => l.crm?.situacao === "FECHADA").length;
+      const cachedAberta = [...cachedByLeadId.values()].filter((l) => l.crm?.situacao === "ABERTA").length;
+      console.log(`[fetch-crm] Cache: ${cachedFechada} FECHADA (reaproveitar) | ${cachedAberta} ABERTA (re-consultar).`);
     } catch {
       console.warn("[fetch-crm] Cache anterior invalido, comecando do zero.");
     }
@@ -283,21 +286,18 @@ async function main() {
     return { ...lead, crm, motivoNome: "", closureType };
   };
 
-  // Determina quais leads precisam ser consultados (so os novos ou sem CRM).
+  // Determina quais leads precisam ser consultados.
+  // Reaproveita do cache APENAS quem ja esta FECHADA (raramente reabre).
+  // Quem esta ABERTA tem que ser re-consultado (pode ter sido fechado).
   const leadsToQuery = [];
   for (const lead of leads) {
-    if (lead.id && cachedByLeadId.has(lead.id)) {
-      // Mantem os dados de CRM do cache, mas atualiza os campos do lead
-      // (caso o nome/email/etc. tenha sido normalizado de forma diferente).
-      const cached = cachedByLeadId.get(lead.id);
-      leadsToQuery.push({ lead, cached });
-    } else {
-      leadsToQuery.push({ lead, cached: null });
-    }
+    const cached = lead.id ? cachedByLeadId.get(lead.id) : null;
+    const reuse = cached?.crm?.situacao === "FECHADA";
+    leadsToQuery.push({ lead, cached: reuse ? cached : null });
   }
 
   const toConsult = leadsToQuery.filter((x) => !x.cached).length;
-  console.log(`[fetch-crm] ${leads.length} leads total | ${leadsToQuery.length - toConsult} ja no cache | ${toConsult} novos para consultar`);
+  console.log(`[fetch-crm] ${leads.length} leads total | ${leadsToQuery.length - toConsult} reaproveitados do cache | ${toConsult} para consultar`);
 
   const enriched = new Array(leads.length);
   let cursor = 0;
