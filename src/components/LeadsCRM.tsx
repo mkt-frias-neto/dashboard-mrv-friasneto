@@ -189,6 +189,62 @@ export default function LeadsCRM() {
     }
   };
 
+  // Exporta os leads filtrados para CSV (abre direto no Excel/Sheets)
+  const exportToCsv = () => {
+    if (filtered.length === 0) return;
+    const escape = (v: string | number) => {
+      const s = String(v ?? "").replace(/"/g, '""');
+      return /[",\n;]/.test(s) ? `"${s}"` : s;
+    };
+    const headers = [
+      "Data Criacao",
+      "Nome",
+      "Email",
+      "Telefone",
+      "WhatsApp",
+      "Anuncio",
+      "Campanha",
+      "Plataforma",
+      "Status",
+      "Corretor",
+      "ID Atendimento KSI",
+    ];
+    const rows = filtered.map((lead) => {
+      const status = getStatusConfig(lead).label;
+      const corretor = lead.crm?.nome ?? "";
+      const ordemId = lead.crm?.idOrdemAtendimento ?? "";
+      const dataIso = lead.createdTime
+        ? new Date(lead.createdTime).toLocaleString("pt-BR")
+        : "";
+      return [
+        dataIso,
+        lead.firstName,
+        lead.email,
+        lead.phoneFormatted,
+        lead.whatsapp ?? "",
+        lead.adName ?? "",
+        lead.campaignName ?? "",
+        lead.platform ?? "",
+        status,
+        corretor,
+        ordemId,
+      ].map(escape).join(",");
+    });
+    // BOM UTF-8 pra acentuacao aparecer correta no Excel
+    const csv = "﻿" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    a.href = url;
+    a.download = `leads-crm-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Date Filters for Leads */}
@@ -284,7 +340,7 @@ export default function LeadsCRM() {
 
       {/* Leads — Desktop: table, Mobile: cards */}
       <div className="bg-white rounded-xl card-shadow p-3 sm:p-6">
-        <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4 flex-wrap">
           <h2 className="text-base sm:text-lg font-bold text-brand-blue-900">
             Leads x CRM
             {statusFilter && (
@@ -293,11 +349,26 @@ export default function LeadsCRM() {
               </span>
             )}
           </h2>
-          {updatedAt && (
-            <span className="text-[9px] sm:text-[10px] text-gray-400">
-              {fmtDate(updatedAt)}
-            </span>
-          )}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={exportToCsv}
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-orange-500 hover:bg-brand-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-medium transition-colors shadow-sm"
+              title="Exportar leads filtrados para CSV (abre no Excel/Sheets)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
+                <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v8.69l2.22-2.22a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 111.06-1.06l2.22 2.22V3.75A.75.75 0 0110 3zM3.75 16a.75.75 0 01.75.75V18h11v-1.25a.75.75 0 011.5 0v1.75a.75.75 0 01-.75.75H4a.75.75 0 01-.75-.75v-1.75a.75.75 0 01.75-.75z" clipRule="evenodd" />
+              </svg>
+              <span className="hidden sm:inline">Exportar CSV</span>
+              <span className="sm:hidden">Exportar</span>
+              <span className="text-[10px] sm:text-xs opacity-80">({filtered.length})</span>
+            </button>
+            {updatedAt && (
+              <span className="text-[9px] sm:text-[10px] text-gray-400 whitespace-nowrap">
+                {fmtDate(updatedAt)}
+              </span>
+            )}
+          </div>
         </div>
 
         {filtered.length === 0 ? (
