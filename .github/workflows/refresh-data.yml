@@ -2,14 +2,9 @@ name: Refresh Dashboard Data
 
 on:
   schedule:
-    # 7:00 AM BRT = 10:00 UTC
-    - cron: "0 10 * * *"
-    # 11:00 AM BRT = 14:00 UTC
-    - cron: "0 14 * * *"
-    # 13:00 PM BRT = 16:00 UTC
-    - cron: "0 16 * * *"
-    # 17:00 PM BRT = 20:00 UTC
-    - cron: "0 20 * * *"
+    # 1x por dia, segunda a sexta, as 7:00 BRT (10:00 UTC).
+    # 1-5 = segunda a sexta (0=domingo). Reduz custos do GitHub Actions.
+    - cron: "0 10 * * 1-5"
   workflow_dispatch: # permite rodar manualmente
 
 jobs:
