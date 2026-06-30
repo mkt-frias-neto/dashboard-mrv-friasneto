@@ -114,8 +114,15 @@ export default function LeadsCRM() {
       const endStr = latestDay || toDateStr(new Date());
 
       if (daysBack === -1) {
-        // "Ontem" — the latest day with leads
-        result = result.filter((l) => getLeadDate(l.createdTime) === endStr);
+        // "Ontem" — exatamente o dia anterior do calendario (mesma logica
+        // do filtro de campanha). Nao usa "ultimo dia com leads" pra
+        // garantir que bate com o "Ontem" do Meta.
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        const yStr = toDateStr(yesterday);
+        result = result.filter((l) => getLeadDate(l.createdTime) === yStr);
       } else {
         const endDate = new Date(endStr + "T12:00:00");
         const startDate = new Date(endDate);
