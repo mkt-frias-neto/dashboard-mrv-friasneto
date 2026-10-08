@@ -23,7 +23,7 @@ export default function FilterBar({ campaigns, adSets, adNames, filters, onChang
           <select
             className={selectClass}
             value={filters.campaign ?? ""}
-            onChange={(e) => onChange({ ...filters, campaign: e.target.value || null })}
+            onChange={(e) => onChange({ ...filters, campaign: e.target.value || null, adSet: null, adName: null })}
           >
             <option value="">Campanhas</option>
             {campaigns.map((c) => (
@@ -34,7 +34,7 @@ export default function FilterBar({ campaigns, adSets, adNames, filters, onChang
           <select
             className={selectClass}
             value={filters.adSet ?? ""}
-            onChange={(e) => onChange({ ...filters, adSet: e.target.value || null })}
+            onChange={(e) => onChange({ ...filters, adSet: e.target.value || null, adName: null })}
           >
             <option value="">Conjuntos</option>
             {adSets.map((s) => (

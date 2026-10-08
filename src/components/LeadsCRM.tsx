@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import type { PeriodWindows } from "@/lib/data";
 
 interface CrmData {
   situacao: string;
@@ -14,9 +15,9 @@ interface CrmData {
 
 interface LeadItem {
   id: string;
+  campaign: string; // product, set by which lead sheet the lead came from
   createdTime: string;
   adName: string;
-  campaignName: string;
   platform: string;
   firstName: string;
   email: string;
@@ -63,7 +64,9 @@ const DATE_PRESETS = [
   { label: "Total", days: null as number | null },
 ];
 
-export default function LeadsCRM() {
+// campaign = the campaign picked in the dashboard's top filter bar (null = all).
+// periods = the dates Meta's 7d/14d/30d totals cover.
+export default function LeadsCRM({ campaign, periods }: { campaign: string | null; periods: PeriodWindows | null }) {
   const [leads, setLeads] = useState<LeadItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,13 +78,23 @@ export default function LeadsCRM() {
   const [customEnd, setCustomEnd] = useState<string | null>(null);
   const [showCustom, setShowCustom] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null); // null = all
+  const [product, setProduct] = useState<string | null>(campaign); // null = all
+
+  // The product filter follows the top campaign filter, and can still be
+  // changed here on its own.
+  useEffect(() => setProduct(campaign), [campaign]);
 
   useEffect(() => {
     fetch("/api/leads-crm")
       .then((r) => r.json())
       .then((json) => {
         if (json.leads) {
-          setLeads(json.leads);
+          // Leads come grouped by sheet; show them as one chronological list
+          setLeads(
+            [...(json.leads as LeadItem[])].sort(
+              (a, b) => Date.parse(a.createdTime) - Date.parse(b.createdTime)
+            )
+          );
           setUpdatedAt(json.updatedAt ?? null);
         } else {
           setError(json.error ?? "Erro ao carregar leads");
@@ -91,9 +104,13 @@ export default function LeadsCRM() {
       .finally(() => setLoading(false));
   }, []);
 
+  const products = useMemo(() => Array.from(new Set(leads.map((l) => l.campaign))), [leads]);
+
   // Filtered leads
   const filtered = useMemo(() => {
     let result = leads;
+
+    if (product) result = result.filter((l) => l.campaign === product);
 
     // Date filter
     if (customStart || customEnd) {
@@ -103,36 +120,33 @@ export default function LeadsCRM() {
         if (customEnd && d > customEnd) return false;
         return true;
       });
+    } else if (daysBack === -1) {
+      // "Ontem" — exatamente o dia anterior do calendario (mesma logica
+      // do filtro de campanha), pra bater com o "Ontem" do Meta.
+      const yesterday = new Date();
+      yesterday.setHours(0, 0, 0, 0);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = toDateStr(yesterday);
+      result = result.filter((l) => getLeadDate(l.createdTime) === yStr);
     } else if (daysBack !== null) {
-      // Anchor periods to the latest lead date (matches Meta's period windows,
-      // which end on the last day with data — not "today"). This keeps the
-      // leads funnel in sync with the campaign KPIs.
-      const latestDay = leads.reduce((max, l) => {
-        const d = getLeadDate(l.createdTime);
-        return d > max ? d : max;
-      }, "");
-      const endStr = latestDay || toDateStr(new Date());
-
-      if (daysBack === -1) {
-        // "Ontem" — exatamente o dia anterior do calendario (mesma logica
-        // do filtro de campanha). Nao usa "ultimo dia com leads" pra
-        // garantir que bate com o "Ontem" do Meta.
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        const yStr = toDateStr(yesterday);
-        result = result.filter((l) => getLeadDate(l.createdTime) === yStr);
-      } else {
-        const endDate = new Date(endStr + "T12:00:00");
-        const startDate = new Date(endDate);
-        startDate.setDate(endDate.getDate() - daysBack + 1);
-        const startStr = toDateStr(startDate);
-        result = result.filter((l) => {
+      // 7d/14d/30d cover the same dates as Meta's totals in the Resumo sheet.
+      // If those are unavailable, anchor on the latest day that has a lead.
+      let range = periods?.[String(daysBack)] ?? null;
+      if (!range) {
+        const latestDay = leads.reduce((max, l) => {
           const d = getLeadDate(l.createdTime);
-          return d >= startStr && d <= endStr;
-        });
+          return d > max ? d : max;
+        }, "");
+        const end = latestDay || toDateStr(new Date());
+        const startDate = new Date(end + "T12:00:00");
+        startDate.setDate(startDate.getDate() - daysBack + 1);
+        range = { start: toDateStr(startDate), end };
       }
+      const { start, end } = range;
+      result = result.filter((l) => {
+        const d = getLeadDate(l.createdTime);
+        return d >= start && d <= end;
+      });
     }
 
     // Status filter
@@ -141,7 +155,7 @@ export default function LeadsCRM() {
     }
 
     return result;
-  }, [leads, daysBack, customStart, customEnd, statusFilter]);
+  }, [leads, product, periods, daysBack, customStart, customEnd, statusFilter]);
 
   // Dynamic summary based on filtered leads
   const summary = useMemo<Summary>(() => {
@@ -209,8 +223,8 @@ export default function LeadsCRM() {
       "Email",
       "Telefone",
       "WhatsApp",
+      "Produto",
       "Anuncio",
-      "Campanha",
       "Plataforma",
       "Status",
       "Corretor",
@@ -229,8 +243,8 @@ export default function LeadsCRM() {
         lead.email,
         lead.phoneFormatted,
         lead.whatsapp ?? "",
+        lead.campaign ?? "",
         lead.adName ?? "",
-        lead.campaignName ?? "",
         lead.platform ?? "",
         status,
         corretor,
@@ -254,9 +268,21 @@ export default function LeadsCRM() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Date Filters for Leads */}
+      {/* Product + Date Filters for Leads */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          <select
+            aria-label="Produto"
+            value={product ?? ""}
+            onChange={(e) => setProduct(e.target.value || null)}
+            className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium border border-brand-blue-200 bg-white text-brand-blue-700 focus:ring-2 focus:ring-brand-orange-500 outline-none shrink-0"
+          >
+            <option value="">Todos os produtos</option>
+            {products.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <div className="w-px h-6 bg-gray-300 shrink-0" />
           {DATE_PRESETS.map((f) => (
             <button
               key={f.label}
@@ -402,7 +428,9 @@ export default function LeadsCRM() {
                       <p className="text-gray-400">{lead.phoneFormatted}</p>
                     </div>
                     <div className="flex items-center justify-between text-[10px] pt-1 border-t border-gray-50">
-                      <span className="text-gray-400">{lead.adName}</span>
+                      <span className="text-gray-400">
+                        <span className="font-medium text-gray-500">{lead.campaign}</span> · {lead.adName}
+                      </span>
                       {lead.crm?.nome && (
                         <span className="text-brand-blue-700 font-medium truncate ml-2">{lead.crm.nome.split(" ").slice(0, 2).join(" ")}</span>
                       )}
@@ -420,6 +448,7 @@ export default function LeadsCRM() {
                     <th className="text-left px-3 py-2.5 rounded-tl-lg">Data</th>
                     <th className="text-left px-3 py-2.5">Nome</th>
                     <th className="text-left px-3 py-2.5">Contato</th>
+                    <th className="text-left px-3 py-2.5">Produto</th>
                     <th className="text-left px-3 py-2.5">Anuncio</th>
                     <th className="text-center px-3 py-2.5">Status</th>
                     <th className="text-left px-3 py-2.5 rounded-tr-lg">Responsavel</th>
@@ -439,6 +468,7 @@ export default function LeadsCRM() {
                           <div className="text-xs">{lead.email}</div>
                           <div className="text-[10px] text-gray-400">{lead.phoneFormatted}</div>
                         </td>
+                        <td className="px-3 py-2.5 text-xs whitespace-nowrap">{lead.campaign}</td>
                         <td className="px-3 py-2.5 text-xs">{lead.adName}</td>
                         <td className="px-3 py-2.5 text-center">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${st.bg} ${st.text}`}>

@@ -54,8 +54,12 @@ export async function GET() {
       fetch(csvUrl(DEVICE_GID), { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } }),
     ]);
 
+    // Every row carries its campaign: the sheets hold one block of rows per
+    // campaign, and the dashboard sums or filters them on the client.
+
     // Age + Gender
     const ageGender: Array<{
+      campaign: string;
       age: string;
       gender: string;
       spend: number;
@@ -75,6 +79,7 @@ export async function GET() {
           genderRaw === "female" ? "Feminino" :
           genderRaw === "male" ? "Masculino" : "Outros";
         ageGender.push({
+          campaign: f[col("Campanha")] ?? "",
           age,
           gender,
           spend: parseNum(f[col("Investimento (R$)")] ?? ""),
@@ -89,6 +94,7 @@ export async function GET() {
 
     // Placement
     const placements: Array<{
+      campaign: string;
       platform: string;
       placement: string;
       spend: number;
@@ -102,6 +108,7 @@ export async function GET() {
       const col = (n: string) => headers.indexOf(n);
       for (const f of rows) {
         placements.push({
+          campaign: f[col("Campanha")] ?? "",
           platform: f[col("Plataforma")] ?? "",
           placement: (f[col("Posicionamento")] ?? "").replace(/_/g, " "),
           spend: parseNum(f[col("Investimento (R$)")] ?? ""),
@@ -115,6 +122,7 @@ export async function GET() {
 
     // Device
     const devices: Array<{
+      campaign: string;
       device: string;
       spend: number;
       impressions: number;
@@ -126,9 +134,10 @@ export async function GET() {
       const { headers, rows } = parseCsv(await deviceRes.text());
       const col = (n: string) => headers.indexOf(n);
 
-      // Aggregate by device category (rows may have device+platform combos)
-      const deviceMap: Record<string, { device: string; spend: number; impressions: number; reach: number; clicks: number; leads: number }> = {};
+      // Aggregate by campaign + device category (rows are device+platform combos)
+      const deviceMap: Record<string, { campaign: string; device: string; spend: number; impressions: number; reach: number; clicks: number; leads: number }> = {};
       for (const f of rows) {
+        const campaign = f[col("Campanha")] ?? "";
         const deviceRaw = (f[col("Dispositivo")] ?? "").toLowerCase().trim();
         // Group into friendly categories
         let device: string;
@@ -141,14 +150,15 @@ export async function GET() {
         } else {
           device = deviceRaw || "Outros";
         }
-        if (!deviceMap[device]) {
-          deviceMap[device] = { device, spend: 0, impressions: 0, reach: 0, clicks: 0, leads: 0 };
+        const key = `${campaign}|${device}`;
+        if (!deviceMap[key]) {
+          deviceMap[key] = { campaign, device, spend: 0, impressions: 0, reach: 0, clicks: 0, leads: 0 };
         }
-        deviceMap[device].spend += parseNum(f[col("Investimento (R$)")] ?? "");
-        deviceMap[device].impressions += parseNum(f[col("Impressões")] ?? "");
-        deviceMap[device].reach += parseNum(f[col("Alcance")] ?? "");
-        deviceMap[device].clicks += parseNum(f[col("Cliques no Link")] ?? "");
-        deviceMap[device].leads += parseNum(f[col("Leads (Total)")] ?? "");
+        deviceMap[key].spend += parseNum(f[col("Investimento (R$)")] ?? "");
+        deviceMap[key].impressions += parseNum(f[col("Impressões")] ?? "");
+        deviceMap[key].reach += parseNum(f[col("Alcance")] ?? "");
+        deviceMap[key].clicks += parseNum(f[col("Cliques no Link")] ?? "");
+        deviceMap[key].leads += parseNum(f[col("Leads (Total)")] ?? "");
       }
       devices.push(...Object.values(deviceMap));
     }

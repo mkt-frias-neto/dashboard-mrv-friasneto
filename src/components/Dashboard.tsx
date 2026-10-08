@@ -11,6 +11,7 @@ import {
   getUniqueAdNames,
   type CampaignRow,
   type Filters,
+  type PeriodWindows,
 } from "@/lib/data";
 import MetricCard from "./MetricCard";
 import DailyChart from "./DailyChart";
@@ -27,16 +28,21 @@ const DATE_PRESETS = [
   { label: "Total", days: null as number | null },
 ];
 
+// Meta's own totals for 7d/14d/30d, keyed by "7" | "14" | "30"
+type ResumoBlock = Record<string, {
+  spent: number; impressions: number; reach: number; frequency: number;
+  clicks: number; ctr: number; cpm: number; cpc: number;
+  leads: number; costPerLead: number; videoViews: number; messages: number;
+}>;
+
 export default function Dashboard() {
   const [allData, setAllData] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resumoMetrics, setResumoMetrics] = useState<Record<string, {
-    spent: number; impressions: number; reach: number; frequency: number;
-    clicks: number; ctr: number; cpm: number; cpc: number;
-    leads: number; costPerLead: number; videoViews: number; messages: number;
-  }> | null>(null);
+  const [resumoMetrics, setResumoMetrics] = useState<ResumoBlock | null>(null); // every campaign together
+  const [resumoByCampaign, setResumoByCampaign] = useState<Record<string, ResumoBlock>>({});
+  const [periods, setPeriods] = useState<PeriodWindows | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     daysBack: null,
@@ -56,6 +62,8 @@ export default function Dashboard() {
           setAllData(json.data);
           setUpdatedAt(json.updatedAt ?? null);
           if (json.resumoMetrics) setResumoMetrics(json.resumoMetrics);
+          if (json.resumoByCampaign) setResumoByCampaign(json.resumoByCampaign);
+          if (json.periods) setPeriods(json.periods);
         } else {
           setError(json.error ?? "Erro ao carregar dados");
         }
@@ -64,22 +72,39 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Ad set and ad options narrow to whatever is selected above them
   const campaigns = useMemo(() => getUniqueCampaigns(allData), [allData]);
-  const adSets = useMemo(() => getUniqueAdSets(allData), [allData]);
-  const adNames = useMemo(() => getUniqueAdNames(allData), [allData]);
+  const adSets = useMemo(
+    () => getUniqueAdSets(allData.filter((r) => !filters.campaign || r.campaignName === filters.campaign)),
+    [allData, filters.campaign]
+  );
+  const adNames = useMemo(
+    () =>
+      getUniqueAdNames(
+        allData.filter(
+          (r) =>
+            (!filters.campaign || r.campaignName === filters.campaign) &&
+            (!filters.adSet || r.adSetName === filters.adSet)
+        )
+      ),
+    [allData, filters.campaign, filters.adSet]
+  );
 
-  const filtered = useMemo(() => applyFilters(allData, filters), [allData, filters]);
+  const filtered = useMemo(() => applyFilters(allData, filters, periods), [allData, filters, periods]);
   const metrics = useMemo(() => aggregateMetrics(filtered), [filtered]);
   const dailyData = useMemo(() => aggregateByDay(filtered), [filtered]);
   const adData = useMemo(() => aggregateByAd(filtered), [filtered]);
 
-  // Use Resumo metrics (accurate period totals from Meta) for KPI cards
-  // when a standard period (7d/14d/30d) is selected with no sub-filters
-  const noSubFilters = !filters.campaign && !filters.adSet && !filters.adName;
+  // KPI cards use Meta's own period totals from the Resumo sheet (which carry
+  // the deduplicated reach) when a standard period (7d/14d/30d) is selected:
+  // the all-campaigns block, or the selected campaign's block. An ad set or
+  // ad filter has no Resumo block, so those sum the daily rows instead.
+  const noAdFilters = !filters.adSet && !filters.adName;
   const noCustomDate = !filters.customStart && !filters.customEnd;
   const periodKey = filters.daysBack !== null && filters.daysBack > 0 ? String(filters.daysBack) : null;
-  const useResumo = !!(resumoMetrics && periodKey && resumoMetrics[periodKey] && noSubFilters && noCustomDate);
-  const rm = useResumo ? resumoMetrics![periodKey!] : null;
+  const resumoBlock = filters.campaign ? resumoByCampaign[filters.campaign] : resumoMetrics;
+  const rm = (periodKey && noAdFilters && noCustomDate ? resumoBlock?.[periodKey] : null) ?? null;
+  const useResumo = rm !== null;
 
   const displaySpent = rm?.spent ?? metrics.totalSpent;
   const displayReach = rm?.reach ?? metrics.totalReach;
@@ -134,7 +159,9 @@ export default function Dashboard() {
             </div>
             <div className="text-right min-w-0">
               <h1 className="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Meta Ads</h1>
-              <p className="text-[10px] sm:text-xs text-white/70 truncate">Piazza di Viena</p>
+              <p className="text-[10px] sm:text-xs text-white/70 truncate">
+                {filters.campaign ?? (campaigns.length > 0 ? campaigns.join(" + ") : "MRV")}
+              </p>
             </div>
           </div>
         </div>
@@ -264,10 +291,10 @@ export default function Dashboard() {
             </div>
 
             {/* Demographics */}
-            <DemographicsCharts />
+            <DemographicsCharts campaign={filters.campaign} />
 
             {/* CRM Integration */}
-            <LeadsCRM />
+            <LeadsCRM campaign={filters.campaign} periods={periods} />
           </>
         )}
       </main>

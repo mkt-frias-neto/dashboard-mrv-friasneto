@@ -39,6 +39,9 @@ export interface Filters {
   adName: string | null;
 }
 
+// The exact dates Meta's 7d/14d/30d totals cover, read from the Resumo sheet.
+export type PeriodWindows = Record<string, { start: string; end: string } | null>;
+
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -46,7 +49,11 @@ function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow[] {
+export function applyFilters(
+  rows: CampaignRow[],
+  filters: Filters,
+  periods?: PeriodWindows | null
+): CampaignRow[] {
   let result = rows;
 
   if (filters.customStart || filters.customEnd) {
@@ -64,9 +71,13 @@ export function applyFilters(rows: CampaignRow[], filters: Filters): CampaignRow
       yesterday.setDate(today.getDate() - 1);
       const yStr = toDateStr(yesterday);
       result = result.filter((r) => r.day === yStr);
+    } else if (periods?.[String(filters.daysBack)]) {
+      // Same window as the Resumo totals, so chart, ad cards and filtered
+      // KPIs cover the same days as Meta's "last N days"
+      const { start, end } = periods[String(filters.daysBack)]!;
+      result = result.filter((r) => r.day >= start && r.day <= end);
     } else {
-      // Last N days — use latest date with meaningful data as end reference
-      // (skip partial/empty days like today with ~0 impressions)
+      // Resumo unavailable: anchor on the latest day with meaningful data
       const latestDay = rows.reduce((max, r) =>
         r.day > max && r.impressions > 10 ? r.day : max, "");
       const endDate = latestDay

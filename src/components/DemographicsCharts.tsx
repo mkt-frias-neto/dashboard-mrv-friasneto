@@ -16,6 +16,7 @@ import {
 } from "recharts";
 
 interface AgeGender {
+  campaign: string;
   age: string;
   gender: string;
   spend: number;
@@ -27,6 +28,7 @@ interface AgeGender {
 }
 
 interface Placement {
+  campaign: string;
   platform: string;
   placement: string;
   spend: number;
@@ -37,6 +39,7 @@ interface Placement {
 }
 
 interface Device {
+  campaign: string;
   device: string;
   spend: number;
   impressions: number;
@@ -57,7 +60,8 @@ const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", cur
 const fmtNum = (n: number) => n.toLocaleString("pt-BR");
 const fmtPct = (n: number) => `${n.toFixed(1)}%`;
 
-export default function DemographicsCharts() {
+// campaign = null shows every campaign summed together
+export default function DemographicsCharts({ campaign }: { campaign: string | null }) {
   const [data, setData] = useState<{
     ageGender: AgeGender[];
     placements: Placement[];
@@ -85,21 +89,39 @@ export default function DemographicsCharts() {
 
   if (!data) return null;
 
-  const { ageGender, placements, devices } = data;
+  // The sheets hold one block of rows per campaign, so the same age band,
+  // placement or device shows up once per campaign and has to be summed.
+  const inCampaign = <T extends { campaign: string }>(rows: T[]) =>
+    campaign ? rows.filter((r) => r.campaign === campaign) : rows;
+
+  const ageGender = inCampaign(data.ageGender);
 
   // --- Age + Gender grouped bar chart data ---
-  const ageGroups = Array.from(new Set(ageGender.map((d) => d.age))).filter((a) => a !== "Unknown");
+  const ageGroups = Array.from(new Set(ageGender.map((d) => d.age)))
+    .filter((a) => a !== "Unknown")
+    .sort();
+  const sumAgeGender = (age: string, gender: string) =>
+    ageGender
+      .filter((d) => d.age === age && d.gender === gender)
+      .reduce(
+        (acc, d) => ({
+          impressions: acc.impressions + d.impressions,
+          leads: acc.leads + d.leads,
+          spend: acc.spend + d.spend,
+        }),
+        { impressions: 0, leads: 0, spend: 0 }
+      );
   const ageBarData = ageGroups.map((age) => {
-    const fem = ageGender.find((d) => d.age === age && d.gender === "Feminino");
-    const masc = ageGender.find((d) => d.age === age && d.gender === "Masculino");
+    const fem = sumAgeGender(age, "Feminino");
+    const masc = sumAgeGender(age, "Masculino");
     return {
       age,
-      Feminino: fem?.impressions ?? 0,
-      Masculino: masc?.impressions ?? 0,
-      leadsFem: fem?.leads ?? 0,
-      leadsMasc: masc?.leads ?? 0,
-      spendFem: fem?.spend ?? 0,
-      spendMasc: masc?.spend ?? 0,
+      Feminino: fem.impressions,
+      Masculino: masc.impressions,
+      leadsFem: fem.leads,
+      leadsMasc: masc.leads,
+      spendFem: fem.spend,
+      spendMasc: masc.spend,
     };
   });
 
@@ -123,18 +145,31 @@ export default function DemographicsCharts() {
   const totalImpressions = genderTotals.femImpressions + genderTotals.mascImpressions;
 
   // --- Placement pie data ---
-  const placementPieData = placements
-    .filter((p) => p.impressions > 0)
-    .sort((a, b) => b.impressions - a.impressions)
-    .map((p) => ({
-      name: `${p.platform === "instagram" ? "IG" : "FB"} ${p.placement}`,
-      value: p.impressions,
-      spend: p.spend,
-      leads: p.leads,
-      clicks: p.clicks,
-    }));
+  const placementMap = new Map<string, { name: string; value: number; spend: number; leads: number; clicks: number }>();
+  for (const p of inCampaign(data.placements)) {
+    const name = `${p.platform === "instagram" ? "IG" : "FB"} ${p.placement}`;
+    const slice = placementMap.get(name) ?? { name, value: 0, spend: 0, leads: 0, clicks: 0 };
+    slice.value += p.impressions;
+    slice.spend += p.spend;
+    slice.leads += p.leads;
+    slice.clicks += p.clicks;
+    placementMap.set(name, slice);
+  }
+  const placementPieData = Array.from(placementMap.values())
+    .filter((p) => p.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   // --- Device data ---
+  const deviceMap = new Map<string, { device: string; spend: number; impressions: number; clicks: number; leads: number }>();
+  for (const d of inCampaign(data.devices)) {
+    const row = deviceMap.get(d.device) ?? { device: d.device, spend: 0, impressions: 0, clicks: 0, leads: 0 };
+    row.spend += d.spend;
+    row.impressions += d.impressions;
+    row.clicks += d.clicks;
+    row.leads += d.leads;
+    deviceMap.set(d.device, row);
+  }
+  const devices = Array.from(deviceMap.values());
   const totalDeviceImpressions = devices.reduce((s, d) => s + d.impressions, 0);
   const deviceData = devices
     .filter((d) => d.impressions > 0)

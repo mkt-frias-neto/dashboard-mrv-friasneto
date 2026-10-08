@@ -1,7 +1,15 @@
-// Pre-computes CRM status for all leads at BUILD time and writes a JSON cache.
-// Runs via the "prebuild" npm hook (locally and on Vercel during each deploy).
+// Pre-computes CRM status for all leads and writes a JSON cache.
 // This avoids querying KSI live on every request, which times out / gets
 // rate-limited with hundreds of leads. The dashboard then loads instantly.
+//
+// WHO RUNS THIS: the "Refresh Dashboard Data" GitHub Action
+// (.github/workflows/refresh-data.yml), on cron "0 10 * * 1-5" — once per
+// weekday at 07:00 BRT. It commits the updated cache (which triggers the
+// Vercel deploy) or pings the Vercel deploy hook when nothing changed.
+// It also has workflow_dispatch, so it can be run by hand from GitHub.
+//
+// There is NO "prebuild" npm hook — `npm run build` does NOT refresh this
+// cache. To refresh locally, run `npm run fetch-crm` explicitly.
 
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,8 +18,19 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = join(__dirname, "..", "src", "app", "api", "leads-crm", "crm-cache.json");
 
-const LEADS_SHEET_ID = "1SbIcGGizozINPj9RLU1t359DbOY0YO5goVJcBO3xk5Q";
-const LEADS_CSV_URL = `https://docs.google.com/spreadsheets/d/${LEADS_SHEET_ID}/export?format=csv`;
+// One lead sheet per product. Add a product by adding an entry to that file.
+const LEAD_SOURCES = JSON.parse(
+  readFileSync(join(__dirname, "..", "src", "data", "lead-sources.json"), "utf8")
+);
+
+function leadsCsvUrl({ sheetId, gid }) {
+  const base = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+  return gid ? `${base}&gid=${gid}` : base;
+}
+
+// Meta sometimes returns this permission error in place of the ad, ad set
+// and campaign names of a lead. The lead itself is real.
+const META_NAME_ERROR = /^Você não tem permissão/;
 
 const KSI_BASE = "https://www.friasneto.com.br/kurole_include/api/webservice/escopos/";
 const KSI_SCOPE_ID = "68";
@@ -213,12 +232,22 @@ async function queryKsiCombined(email, phone) {
 async function main() {
   console.log("[fetch-crm] Starting CRM pre-computation...");
 
-  // 1. Fetch leads CSV + closure reasons
-  let csvText;
+  // 1. Fetch every lead sheet. If any of them fails, keep the existing cache
+  //    untouched rather than publish one with a whole product missing.
+  let sheets;
   try {
-    const res = await fetch(LEADS_CSV_URL, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
-    csvText = await res.text();
+    sheets = await Promise.all(
+      LEAD_SOURCES.map(async (source) => {
+        const res = await fetch(leadsCsvUrl(source), { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (!res.ok) throw new Error(`${source.campaign}: CSV fetch failed (${res.status})`);
+        const csvText = await res.text();
+        // A sheet that is no longer public answers 200 with an HTML page
+        if (!csvText.split("\n")[0].includes("created_time")) {
+          throw new Error(`${source.campaign}: response is not the leads CSV`);
+        }
+        return { source, csvText };
+      })
+    );
   } catch (err) {
     console.error("[fetch-crm] Could not fetch leads sheet:", err.message);
     console.error("[fetch-crm] Keeping existing cache (if any). Build continues.");
@@ -248,34 +277,42 @@ async function main() {
     }
   }
 
-  const lines = csvText.split("\n").filter((l) => l.trim() !== "");
-  if (lines.length < 2) {
-    writeFileSync(OUT_PATH, JSON.stringify({ leads: [], summary: { total: 0, aberta: 0, fechada: 0 }, updatedAt: new Date().toISOString() }));
-    return;
-  }
-
-  const headers = parseCsvLine(lines[0]);
-  const colIndex = (name) => headers.findIndex((h) => h === name);
-
   const leads = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
-    leads.push({
-      id: cols[colIndex("id")] ?? "",
-      createdTime: cols[colIndex("created_time")] ?? "",
-      adName: cols[colIndex("ad_name")] ?? "",
-      adSetName: cols[colIndex("adset_name")] ?? "",
-      campaignName: cols[colIndex("campaign_name")] ?? "",
-      formName: cols[colIndex("form_name")] ?? "",
-      platform: cols[colIndex("platform")] ?? "",
-      whatsapp: cols[colIndex("qual_o_seu_whatsapp?")] ?? "",
-      firstName: toTitleCase(cols[colIndex("first_name")] ?? ""),
-      email: cleanEmail(cols[colIndex("email")] ?? ""),
-      phoneRaw: cols[colIndex("phone_number")] ?? "",
-      phoneFormatted: formatPhone(cols[colIndex("phone_number")] ?? ""),
-      idKsi: cols[colIndex("id_ksi")] ?? "",
-      leadStatus: cols[colIndex("lead_status")] ?? "",
-    });
+  for (const { source, csvText } of sheets) {
+    const lines = csvText.split("\n").filter((l) => l.trim() !== "");
+    const headers = parseCsvLine(lines[0]);
+    const colIndex = (name) => headers.indexOf(name);
+    const metaName = (cols, name, fallback) => {
+      const value = cols[colIndex(name)] ?? "";
+      return META_NAME_ERROR.test(value) ? fallback : value;
+    };
+
+    let count = 0;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].includes("<test lead:")) continue; // Meta's form test tool, dummy data
+      const cols = parseCsvLine(lines[i]);
+      leads.push({
+        id: cols[colIndex("id")] ?? "",
+        // The product comes from which sheet the lead is in, not from the
+        // sheet's campaign_name column, which Meta does not always fill.
+        campaign: source.campaign,
+        createdTime: cols[colIndex("created_time")] ?? "",
+        adName: metaName(cols, "ad_name", "Anúncio não identificado"),
+        adSetName: metaName(cols, "adset_name", ""),
+        campaignName: metaName(cols, "campaign_name", ""),
+        formName: cols[colIndex("form_name")] ?? "",
+        platform: cols[colIndex("platform")] ?? "",
+        whatsapp: cols[colIndex("qual_o_seu_whatsapp?")] ?? "",
+        firstName: toTitleCase(cols[colIndex("first_name")] ?? ""),
+        email: cleanEmail(cols[colIndex("email")] ?? ""),
+        phoneRaw: cols[colIndex("phone_number")] ?? "",
+        phoneFormatted: formatPhone(cols[colIndex("phone_number")] ?? ""),
+        idKsi: cols[colIndex("id_ksi")] ?? "",
+        leadStatus: cols[colIndex("lead_status")] ?? "",
+      });
+      count++;
+    }
+    console.log(`[fetch-crm] ${source.campaign}: ${count} leads na planilha.`);
   }
 
   // Como nao temos como distinguir Lost x Venda pela API do KSI,
